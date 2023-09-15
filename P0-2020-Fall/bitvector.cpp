@@ -9,24 +9,24 @@
  * 1s. Also, write the bit vector to disk. Return the number of blocks
  * occupied. */
 
-uint BitVector::create(FileVolume * pfv, uint nbits, uint nblockbegin)
+uint BitVector::create(FileVolume *pfv, uint nbits, uint nblockbegin)
 {
   fv = pfv;
   uint bsz = fv->superBlock.nBytesPerBlock;
   bitVector = new byte[bsz];
   if (bitVector == 0)
-    return 0;			// could not get mem for bitVector
+    return 0; // could not get mem for bitVector
 
   nBits = nbits;
   nBlockBegin = nblockbegin;
 
   uint nbytes = (nbits + 7) / 8; // so many bytes
   uint nBlocksLong = (nbytes + bsz - 1) / bsz;
-  memset(bitVector, 0xFF, bsz);	// set all bits to free, i.e., 1
+  memset(bitVector, 0xFF, bsz); // set all bits to free, i.e., 1
   // write the bit-vector to disk
   for (uint i = 1; i < nBlocksLong; i++)
     fv->writeBlock(nBlockBegin + i, bitVector);
-  bitVector[0] = 0x7F;		// 0-th bit marked as in-use
+  bitVector[0] = 0x7F; // 0-th bit marked as in-use
   fv->writeBlock(nBlockBegin, bitVector);
 
   // mark the *blocks* used by the bit-vector as not free
@@ -35,17 +35,17 @@ uint BitVector::create(FileVolume * pfv, uint nbits, uint nblockbegin)
   return nBlocksLong;
 }
 
-uint BitVector::reCreate(FileVolume * pfv, uint nbits, uint nblockbegin)
+uint BitVector::reCreate(FileVolume *pfv, uint nbits, uint nblockbegin)
 {
   fv = pfv;
   uint bsz = fv->superBlock.nBytesPerBlock;
   bitVector = new byte[bsz];
   if (bitVector == 0)
-    return 0;			// could not get mem for bitVector
+    return 0; // could not get mem for bitVector
 
   nBits = nbits;
   nBlockBegin = nblockbegin;
-  uint nbytes = (nbits + 7) / 8;	// so many bytes
+  uint nbytes = (nbits + 7) / 8; // so many bytes
   return (nbytes + bsz - 1) / bsz;
 }
 
@@ -54,17 +54,17 @@ uint BitVector::reCreate(FileVolume * pfv, uint nbits, uint nblockbegin)
 uint BitVector::getBit(uint x)
 {
   if (x > nBits)
-    return 0;			// illegal value
+    return 0; // illegal value
 
   uint bsz = fv->superBlock.nBytesPerBlock;
-  uint xbyte = x / 8;		// bit index converted to byte index
-  uint xblock = xbyte / bsz;	// converted to block index
+  uint xbyte = x / 8;        // bit index converted to byte index
+  uint xblock = xbyte / bsz; // converted to block index
   fv->readBlock(nBlockBegin + xblock, bitVector);
 
-  uint b = bitVector[xbyte % bsz];	// our needed bit is in b
-  uint f = x % 8;		// bit f of b is wanted
-  b >>= 7 - f;			// right shift b by (7-f) positions
-  return b & 1;			// return the last bit
+  uint b = bitVector[xbyte % bsz]; // our needed bit is in b
+  uint f = x % 8;                  // bit f of b is wanted
+  b >>= 7 - f;                     // right shift b by (7-f) positions
+  return b & 1;                    // return the last bit
 }
 
 /* pre:: v==0, or 1;; post:: freeBit[x] := v, and write it to the
@@ -73,15 +73,15 @@ uint BitVector::getBit(uint x)
 void BitVector::setBit(uint x, uint v)
 {
   if (x > nBits)
-    return;			// illegal value
+    return; // illegal value
 
   uint bsz = fv->superBlock.nBytesPerBlock;
-  uint xbyte = x / 8;		// bit index converted to byte index
-  uint xblock = xbyte / bsz;	// converted to block index
+  uint xbyte = x / 8;        // bit index converted to byte index
+  uint xblock = xbyte / bsz; // converted to block index
   fv->readBlock(nBlockBegin + xblock, bitVector);
 
   uint f = x % 8;
-  uint m = 1 << (7 - f);	// 00...010...0, bit 1 in the f-th position
+  uint m = 1 << (7 - f); // 00...010...0, bit 1 in the f-th position
   uint b = bitVector[xbyte % bsz];
   bitVector[xbyte % bsz] = (v != 0 ? b | m : b & ~m);
   fv->writeBlock(nBlockBegin + xblock, bitVector);
@@ -94,7 +94,8 @@ void BitVector::setBit(uint x, uint v)
 uint BitVector::getFreeBit()
 {
   for (uint i = 1; i < nBits; i++)
-    if (getBit(i) == 1) {
+    if (getBit(i) == 1)
+    {
       setBit(i, 0);
       return i;
     }

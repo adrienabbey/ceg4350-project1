@@ -12,15 +12,18 @@
  * file-size field, iHeight >= 3 ;; post:: Construct the inode array
  * on the disk. */
 
-uint Inodes::create
-    (FileVolume * pfv, uint nBegin, uint nInodes, uint iHeight) {
-  uint iWidth = sizeof(uint);		// assumption
+uint Inodes::create(FileVolume *pfv, uint nBegin, uint nInodes, uint iHeight)
+{
+  uint iWidth = sizeof(uint); // assumption
 
   // *INDENT-OFF* // Decide how many indirect entries to have
   uint iIndirect = 0;
-  if (iHeight > 4)    iIndirect = 1;
-  if (iHeight > 5)    iIndirect = 2;
-  if (iHeight > 6)    iIndirect = 3;
+  if (iHeight > 4)
+    iIndirect = 1;
+  if (iHeight > 5)
+    iIndirect = 2;
+  if (iHeight > 6)
+    iIndirect = 3;
   // *INDENT-ON*
 
   fv = pfv;
@@ -32,24 +35,26 @@ uint Inodes::create
   fv->superBlock.nBlocksOfInodes =
       (nInodes * iWidth * iHeight + bsz - 1) / bsz;
   fv->superBlock.inodesPerBlock = bsz / iWidth / iHeight;
-  fv->superBlock.iDirect = iHeight - 1 - 1 - iIndirect;	// see xType, xFileSize
+  fv->superBlock.iDirect = iHeight - 1 - 1 - iIndirect; // see xType, xFileSize
 
   // set all inodes to zero, and mark blocks occupied by inodes as in-use
-  uintbuffer = (uint *) new byte[bsz]; // inodes from one block
+  uintbuffer = (uint *)new byte[bsz]; // inodes from one block
   memset(uintbuffer, 0, bsz);
   for (uint i = fv->superBlock.nBlockBeginInodes,
-       j = i + fv->superBlock.nBlocksOfInodes; i < j; i++) {
+            j = i + fv->superBlock.nBlocksOfInodes;
+       i < j; i++)
+  {
     fv->writeBlock(i, uintbuffer);
     fv->fbvBlocks.setBit(i, 0);
   }
   return nInodes;
 }
 
-uint Inodes::reCreate(FileVolume * pfv)
+uint Inodes::reCreate(FileVolume *pfv)
 {
   fv = pfv;
   uint bsz = fv->superBlock.nBytesPerBlock;
-  uintbuffer = (uint *) new byte[bsz];
+  uintbuffer = (uint *)new byte[bsz];
   return fv->superBlock.nInodes;
 }
 
@@ -57,14 +62,13 @@ uint Inodes::reCreate(FileVolume * pfv)
  * inode numbered in into uintbuffer, and return a ptr to it. If ne !=
  * 0, set *ne to the number of blocks in file with inode in. */
 
-uint *Inodes::getInode(uint in, uint * ne)
+uint *Inodes::getInode(uint in, uint *ne)
 {
-  uint nblock = fv->superBlock.nBlockBeginInodes
-      + in / fv->superBlock.inodesPerBlock;
+  uint nblock = fv->superBlock.nBlockBeginInodes + in / fv->superBlock.inodesPerBlock;
   fv->readBlock(nblock, uintbuffer);
-  uint *pin = uintbuffer
-      + (in % fv->superBlock.inodesPerBlock) * fv->superBlock.iHeight;
-  if (ne != 0) {
+  uint *pin = uintbuffer + (in % fv->superBlock.inodesPerBlock) * fv->superBlock.iHeight;
+  if (ne != 0)
+  {
     uint bsz = fv->superBlock.nBytesPerBlock;
     uint fileSize = pin[xFileSize];
     *ne = (fileSize + bsz - 1) / bsz;
@@ -78,8 +82,7 @@ uint *Inodes::getInode(uint in, uint * ne)
 
 uint Inodes::putInode(uint in)
 {
-  uint nblock = fv->superBlock.nBlockBeginInodes
-      + in / fv->superBlock.inodesPerBlock;
+  uint nblock = fv->superBlock.nBlockBeginInodes + in / fv->superBlock.inodesPerBlock;
   return fv->writeBlock(nblock, uintbuffer);
 }
 
@@ -89,7 +92,8 @@ uint Inodes::putInode(uint in)
 uint Inodes::getFree()
 {
   uint in = fv->fbvInodes.getFreeBit();
-  if (in > 0) {
+  if (in > 0)
+  {
     uint *pin = getInode(in, 0);
     memset(pin, 0, fv->superBlock.iWidth * fv->superBlock.iHeight);
     putInode(in);
@@ -139,23 +143,23 @@ uint Inodes::setFileSize(uint in, uint sz)
 
 uint Inodes::incFileSize(uint in, int inc)
 {
-  uint *pin = getInode(in, 0);	// TBD use get/setFileSize
+  uint *pin = getInode(in, 0); // TBD use get/setFileSize
   pin[xFileSize] += inc;
   putInode(in);
   return pin[xFileSize];
 }
 
-uint Inodes::setSingleIndirect(uint * single, uint nu, uint bn)
+uint Inodes::setSingleIndirect(uint *single, uint nu, uint bn)
 {
   return TODO("Inodes::setSingleIndirect");
 }
 
-uint Inodes::setDoubleIndirect(uint * duble, uint nu, uint bn)
+uint Inodes::setDoubleIndirect(uint *duble, uint nu, uint bn)
 {
   return TODO("Inodes::setDoubleIndirect");
 }
 
-uint Inodes::setTripleIndirect(uint * triple, uint nu, uint bn)
+uint Inodes::setTripleIndirect(uint *triple, uint nu, uint bn)
 {
   return TODO("Inodes::setTripleIndirect");
 }
@@ -175,29 +179,31 @@ uint Inodes::setLastBlockNumber(uint in, uint bn)
   // pin[iDirect+2] may be 0
   // pin[iDirect+1] may be 0
 
-  if (nu >= iIndirectThree) ; // beyond capacity!
+  if (nu >= iIndirectThree)
+    ; // beyond capacity!
   else if (nu >= iIndirectTwo)
-    changed = setTripleIndirect(&pin[iDirect+2], nu - iIndirectTwo , bn);
+    changed = setTripleIndirect(&pin[iDirect + 2], nu - iIndirectTwo, bn);
   else if (nu >= iIndirectOne)
-    changed = setDoubleIndirect(&pin[iDirect+1], nu - iIndirectOne, bn);
+    changed = setDoubleIndirect(&pin[iDirect + 1], nu - iIndirectOne, bn);
   else if (nu >= iDirect)
     changed = setSingleIndirect(&pin[iDirect], nu - iDirect, bn);
-  else {
-    if (bn == 0) fv->fbvBlocks.setBit(pin[nu], 1);
-    pin[nu] = bn;		// nu < iDirect
-    changed = (bn > 0? 1 : 2);
+  else
+  {
+    if (bn == 0)
+      fv->fbvBlocks.setBit(pin[nu], 1);
+    pin[nu] = bn; // nu < iDirect
+    changed = (bn > 0 ? 1 : 2);
   }
-  if (changed > 0) putInode(in);
+  if (changed > 0)
+    putInode(in);
   return 1;
 }
 
 uint Inodes::addBlockNumber(uint in, uint bn)
 {
-  return
-    in == 0 || in >= fv->superBlock.nInodes
-    || bn == 0 || bn >= fv->superBlock.nTotalBlocks
-    ? 0
-    : setLastBlockNumber(in, bn);
+  return in == 0 || in >= fv->superBlock.nInodes || bn == 0 || bn >= fv->superBlock.nTotalBlocks
+             ? 0
+             : setLastBlockNumber(in, bn);
 }
 
 /* pre:: 0 <= yth < block-numbers-per-block;; post:: From the single
@@ -239,11 +245,11 @@ uint Inodes::getBlockNumber(uint in, uint nth)
 
   uint iIndirectTwo = iIndirectOne + bnpb * bnpb;
   if (nth < iIndirectTwo)
-    return getBlockNumberDoubleIndirect(pin[iDirect+1], nth - iIndirectOne);
+    return getBlockNumberDoubleIndirect(pin[iDirect + 1], nth - iIndirectOne);
 
   uint iIndirectThree = iIndirectTwo + bnpb * bnpb * bnpb;
   if (nth < iIndirectThree)
-    return getBlockNumberTripleIndirect(pin[iDirect+2], nth - iIndirectTwo);
+    return getBlockNumberTripleIndirect(pin[iDirect + 2], nth - iIndirectTwo);
 
   return 0;
 }
@@ -256,7 +262,8 @@ uint Inodes::setFree(uint in)
 {
   uint nu = 0;
   getInode(in, &nu);
-  for (uint i = nu; i > 0;) {
+  for (uint i = nu; i > 0;)
+  {
     uint bn = getBlockNumber(in, --i);
     fv->fbvBlocks.setBit(bn, 1);
   }
@@ -271,7 +278,8 @@ uint Inodes::show(uint in)
 {
   uint *pin = getInode(in, 0), x = 0;
   printf("inode #%d == [", in);
-  for (; x < xFileSize; x++) {
+  for (; x < xFileSize; x++)
+  {
     printf(" %d:%d", x, pin[x]);
   }
   printf(" size=%d]\n", pin[x]);

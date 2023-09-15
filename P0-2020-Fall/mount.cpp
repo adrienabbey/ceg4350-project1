@@ -9,8 +9,8 @@
  2. No mount point is used more than once: see whatIsMountedAt.
  3. No check is made that a new mount is made on the path to cwd.  */
 
-MountEntry * mtab = 0;		// ptr to the latest mount entry
-VNIN cwdVNIN = mkVNIN(0, 0);	// VNIN -- volume# i#
+MountEntry *mtab = 0;        // ptr to the latest mount entry
+VNIN cwdVNIN = mkVNIN(0, 0); // VNIN -- volume# i#
 
 MountEntry::MountEntry(VNIN awhich, VNIN awhere)
 {
@@ -23,7 +23,7 @@ MountEntry::MountEntry(VNIN awhich, VNIN awhere)
 MountEntry::~MountEntry()
 {
   if (mtab == this)
-    mtab =  mtab->next;
+    mtab = mtab->next;
 }
 
 VNIN MountEntry::rootVNIN()
@@ -55,7 +55,7 @@ VNIN MountEntry::leafNameVNIN(byte *leafnm, VNIN vnin)
 
 VNIN MountEntry::parentOf(VNIN vnin)
 {
-  return leafNameVNIN((byte *) "..", whereMounted(vnin));
+  return leafNameVNIN((byte *)"..", whereMounted(vnin));
 }
 
 /* pre:: pathnm[] is a relative or absolute path name string;; post::
