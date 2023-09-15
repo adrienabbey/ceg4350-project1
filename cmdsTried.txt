@@ -1,0 +1,8861 @@
+Script started on 2023-09-15 15:46:28-04:00 [TERM="xterm-256color" TTY="/dev/pts/0" COLUMNS="90" LINES="53"]
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1[00m$ ls
+[?2004l[0m[01;34mP0-2020-Fall[0m  cmdsTried.txt
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1[00m$ cd P0-2020-Fall/
+[?2004l[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls
+[?2004lMakefile       diskParams.dat  inodes.cpp  shell.cpp~   user.cpp
+bitvector.cpp  file.cpp        mount.cpp   simdisk.cpp  volume.cpp
+directory.cpp  fs33types.hpp   shell.cpp   typescript
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ cat shell.cpp
+[?2004l/*
+ * shell.C -- CEG433 File Sys Project shell
+ * pmateti@wright.edu
+ */
+
+#include "fs33types.hpp"
+
+extern MountEntry *mtab;
+extern VNIN cwdVNIN;
+FileVolume *fv; // Suspicious!
+Directory *wd;  // Suspicious!
+
+#define nArgsMax 10
+char types[1 + nArgsMax]; // +1 for \0
+
+/* An Arg-ument for one of our commands is either a "word" (a null
+ * terminated string), or an unsigned integer.  We store both
+ * representations of the argument. */
+
+class Arg
+{
+public:
+  char *s;
+  uint u;
+} arg[nArgsMax];
+
+uint nArgs = 0;
+
+uint TODO()
+{
+  printf("to be done!\n");
+  return 0;
+}
+
+uint TODO(char *p)
+{
+  printf("%s to be done!\n", p);
+  return 0;
+}
+
+uint isDigit(char c)
+{
+  return '0' <= c && c <= '9';
+}
+
+uint isAlphaNumDot(char c)
+{
+  return c == '.' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9';
+}
+
+int toNum(const char *p)
+{
+  return (p != 0 && '0' <= *p && *p <= '9' ? atoi(p) : 0);
+}
+
+SimDisk *mkSimDisk(byte *name)
+{
+  SimDisk *simDisk = new SimDisk(name, 0);
+  if (simDisk->nSectorsPerDisk == 0)
+  {
+    printf("Failed to find/create simDisk named %s\n", name);
+    delete simDisk;
+    simDisk = 0;
+  }
+  return simDisk;
+}
+
+void doMakeDisk(Arg *a)
+{
+  SimDisk *simDisk = mkSimDisk((byte *)a[0].s);
+  if (simDisk == 0)
+    return;
+  printf("new SimDisk(%s) = %p, nSectorsPerDisk=%d,"
+         "nBytesPerSector=%d, simDiskNum=%d)\n",
+         simDisk->name, (void *)simDisk, simDisk->nSectorsPerDisk,
+         simDisk->nBytesPerSector, simDisk->simDiskNum);
+  delete simDisk;
+}
+
+void doWriteDisk(Arg *a)
+{
+  SimDisk *simDisk = mkSimDisk((byte *)a[0].s);
+  if (simDisk == 0)
+    return;
+  char *st = a[2].s; // arbitrary word
+  if (st == 0)       // if it is NULL, we use ...
+    st = "CEG433/633/Mateti";
+  char buf[1024]; // assuming nBytesPerSectorMAX < 1024
+  for (uint m = strlen(st), n = 0; n < 1024 - m; n += m)
+    memcpy(buf + n, st, m); // fill with several copies of st
+  uint r = simDisk->writeSector(a[1].u, (byte *)buf);
+  printf("write433disk(%d, %s...) == %d to Disk %s\n", a[1].u, st, r, a[0].s);
+  delete simDisk;
+}
+
+void doReadDisk(Arg *a)
+{
+  SimDisk *simDisk = mkSimDisk((byte *)a[0].s);
+  if (simDisk == 0)
+    return;
+  char buf[1024]; // assuming nBytesPerSectorMAX < 1024
+  uint r = simDisk->readSector(a[1].u, (byte *)buf);
+  buf[10] = 0; // sentinel
+  printf("read433disk(%d, %s...) = %d from Disk %s\n", a[1].u, buf, r, a[0].s);
+  delete simDisk;
+}
+
+void doQuit(Arg *a)
+{
+  exit(0);
+}
+
+void doEcho(Arg *a)
+{
+  printf("%s#%d, %s#%d, %s#%d, %s#%d\n", a[0].s, a[0].u,
+         a[1].s, a[1].u, a[2].s, a[2].u, a[3].s, a[3].u);
+}
+
+void doMakeFV(Arg *a)
+{
+  SimDisk *simDisk = mkSimDisk((byte *)a[0].s);
+  if (simDisk == 0)
+    return;
+  fv = simDisk->make33fv();
+  printf("make33fv() = %p, Name == %s, Disk# == %d\n",
+         (void *)fv, a[0].s, simDisk->simDiskNum);
+
+  if (fv)
+  {
+    wd = new Directory(fv, 1, 0);
+    cwdVNIN = mkVNIN(simDisk->simDiskNum, 1);
+  }
+}
+
+void doCopyTo(byte *from, byte *to)
+{
+  uint r = fv->write33file(to, from);
+  printf("write33file(%s, %s) == %d\n", to, from, r);
+}
+
+void doCopyFrom(byte *from, byte *to)
+{
+  uint r = fv->read33file(to, from);
+  printf("read33file(%s, %s) == %d\n", to, from, r);
+}
+
+void doCopy33(byte *from, byte *to)
+{
+  uint r = fv->copy33file(to, from);
+  printf("copy33file(%s, %s) == %d\n", to, from, r);
+}
+
+void doCopy(Arg *a)
+{
+  byte *to = (byte *)a[0].s;
+  byte *from = (byte *)a[1].s;
+
+  if (a[0].s[0] == '@' && a[1].s[0] != '@')
+  {
+    doCopyTo(from, (to + 1));
+  }
+  else if (a[0].s[0] != '@' && a[1].s[0] == '@')
+  {
+    doCopyFrom((from + 1), to);
+  }
+  else if (a[0].s[0] != '@' && a[1].s[0] != '@')
+  {
+    doCopy33(from, to);
+  }
+  else
+  {
+    puts("Wrong arguments to cp.");
+  }
+}
+
+void doLsLong(Arg *a)
+{
+  printf("\nDirectory listing for disk %s, cwdVNIN == 0x%0lx begins:\n",
+         wd->fv->simDisk->name, (ulong)cwdVNIN);
+  wd->ls(); // Suspicious!
+  printf("Directory listing ends.\n");
+}
+
+void doRm(Arg *a)
+{
+  uint in = wd->fv->deleteFile((byte *)a[0].s);
+  printf("rm %s returns %d.\n", a[0].s, in);
+}
+
+void doInode(Arg *a)
+{
+  uint ni = a[0].u;
+
+  wd->fv->inodes.show(ni);
+}
+
+void doMkDir(Arg *a)
+{
+  TODO("doMkDir");
+}
+
+void doChDir(Arg *a)
+{
+  TODO("doChDir");
+}
+
+void doPwd(Arg *a)
+{
+  TODO("doPwd");
+}
+
+void doMv(Arg *a)
+{
+  TODO("doMv");
+}
+
+void doMountDF(Arg *a) // arg a ignored
+{
+  TODO("doMountDF");
+}
+
+void doMountUS(Arg *a)
+{
+  TODO("doMountUS");
+}
+
+void doUmount(Arg *a)
+{
+  TODO("doUmount");
+}
+
+/* The following describes one entry in our table of commands.  For
+ * each cmmdName (a null terminated string), we specify the arguments
+ * it requires by a sequence of letters.  The letter s stands for
+ * "that argument should be a string", the letter u stands for "that
+ * argument should be an unsigned int."  The data member (func) is a
+ * pointer to the function in our code that implements that command.
+ * globalsNeeded identifies whether we need a volume ("v"), a simdisk
+ * ("d"), or a mount table ("m").  See invokeCmd() below for exact
+ * details of how all these flags are interpreted.
+ */
+
+class CmdTable
+{
+public:
+  char *cmdName;
+  char *argsRequired;
+  char *globalsNeeded; // need d==simDisk, v==cfv, m=mtab
+  void (*func)(Arg *a);
+} cmdTable[] = {
+    {"cd", "s", "v", doChDir},
+    {"cp", "ss", "v", doCopy},
+    {"echo", "ssss", "", doEcho},
+    {"inode", "u", "v", doInode},
+    {"ls", "", "v", doLsLong},
+    {"lslong", "", "v", doLsLong},
+    {"mkdir", "s", "v", doMkDir},
+    {"mkdisk", "s", "", doMakeDisk},
+    {"mkfs", "s", "", doMakeFV},
+    {"mount", "us", "", doMountUS},
+    {"mount", "", "", doMountDF},
+    {"mv", "ss", "v", doMv},
+    {"rddisk", "su", "", doReadDisk},
+    {"rmdir", "s", "v", doRm},
+    {"rm", "s", "v", doRm},
+    {"pwd", "", "v", doPwd},
+    {"q", "", "", doQuit},
+    {"quit", "", "", doQuit},
+    {"umount", "u", "m", doUmount},
+    {"wrdisk", "sus", "", doWriteDisk}};
+
+uint ncmds = sizeof(cmdTable) / sizeof(CmdTable);
+
+void usage()
+{
+  printf("The shell has only the following cmds:\n");
+  for (uint i = 0; i < ncmds; i++)
+    printf("\t%s\t%s\n", cmdTable[i].cmdName, cmdTable[i].argsRequired);
+  printf("Start with ! to invoke a Unix shell cmd\n");
+}
+
+/* pre:: k >= 0, arg[] are set already;; post:: Check that args are
+ * ok, and the needed simDisk or cfv exists before invoking the
+ * appropriate action. */
+
+void invokeCmd(int k, Arg *arg)
+{
+  uint ok = 1;
+  if (cmdTable[k].globalsNeeded[0] == 'v' && cwdVNIN == 0)
+  {
+    ok = 0;
+    printf("Cmd %s needs the cfv to be != 0.\n", cmdTable[k].cmdName);
+  }
+  else if (cmdTable[k].globalsNeeded[0] == 'm' && mtab == 0)
+  {
+    ok = 0;
+    printf("Cmd %s needs the mtab to be != 0.\n", cmdTable[k].cmdName);
+  }
+
+  char *req = cmdTable[k].argsRequired;
+  uint na = strlen(req);
+  for (uint i = 0; i < na; i++)
+  {
+    if (req[i] == 's' && (arg[i].s == 0 || arg[i].s[0] == 0))
+    {
+      ok = 0;
+      printf("arg #%d must be a non-empty string.\n", i);
+    }
+    if ((req[i] == 'u') && (arg[i].s == 0 || !isDigit(arg[i].s[0])))
+    {
+      ok = 0;
+      printf("arg #%d (%s) must be a number.\n", i, arg[i].s);
+    }
+  }
+  if (ok)
+    (*cmdTable[k].func)(arg);
+}
+
+/* pre:: buf[] is the command line as typed by the user, nMax + 1 ==
+ * sizeof(types);; post:: Parse the line, and set types[], arg[].s and
+ * arg[].u fields.
+ */
+
+void setArgsGiven(char *buf, Arg *arg, char *types, uint nMax)
+{
+  for (uint i = 0; i < nMax; i++)
+  {
+    arg[i].s = 0;
+    types[i] = 0;
+  }
+  types[nMax] = 0;
+
+  strtok(buf, " \t\n"); // terminates the cmd name with a \0
+
+  for (uint i = 0; i < nMax;)
+  {
+    char *q = strtok(0, " \t");
+    if (q == 0 || *q == 0)
+      break;
+    arg[i].s = q;
+    arg[i].u = toNum(q);
+    types[i] = isDigit(*q) ? 'u' : 's';
+    nArgs = ++i;
+  }
+}
+
+/* pre:: name pts to the command token, argtypes[] is a string of
+ * 's'/'u' indicating the types of arguments the user gave;; post::
+ * Find the row number of the (possibly overloaded) cmd given in
+ * name[].  Return this number if found; return -1 otherwise. */
+
+int findCmd(char *name, char *argtypes)
+{
+  for (uint i = 0; i < ncmds; i++)
+  {
+    if (strcmp(name, cmdTable[i].cmdName) == 0 && strcmp(argtypes, cmdTable[i].argsRequired) == 0)
+    {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void ourgets(char *buf)
+{
+  fgets(buf, 1024, stdin);
+  char *p = index(buf, '\n');
+  if (p)
+    *p = 0;
+}
+
+int main()
+{
+  char buf[1024]; // better not type longer than 1023 chars
+
+  usage();
+  for (;;)
+  {
+    *buf = 0;               // clear old input
+    printf("%s", "sh33% "); // prompt
+    ourgets(buf);
+    printf("cmd [%s]\n", buf); // just print out what we got as-is
+    if (buf[0] == 0)
+      continue;
+    if (buf[0] == '#')
+      continue;        // this is a comment line, do nothing
+    if (buf[0] == '!') // begins with !, execute it as
+      system(buf + 1); // a normal shell cmd
+    else
+    {
+      setArgsGiven(buf, arg, types, nArgsMax);
+      int k = findCmd(buf, types);
+      if (k >= 0)
+        invokeCmd(k, arg);
+      else
+        usage();
+    }
+  }
+}
+
+// -eof-
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls -hla
+[?2004ltotal 104K
+drwx------ 2 adrienabbey adrienabbey 4.0K Sep 15 15:37 [0m[01;34m.[0m
+drwxrwxr-x 4 adrienabbey adrienabbey 4.0K Sep 15 15:39 [01;34m..[0m
+-rw------- 1 adrienabbey adrienabbey   17 Apr  2  2007 .gitignore
+-rw------- 1 adrienabbey adrienabbey  722 Jul  7  2020 Makefile
+-rw-rw-r-- 1 adrienabbey adrienabbey 2.9K Sep 15 15:37 bitvector.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 5.4K Sep 15 15:37 directory.cpp
+-rw------- 1 adrienabbey adrienabbey  174 Apr  2  2007 diskParams.dat
+-rw-rw-r-- 1 adrienabbey adrienabbey 4.2K Sep 15 15:37 file.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.9K Sep 15 15:37 fs33types.hpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 7.5K Sep 15 15:37 inodes.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.6K Sep 15 15:37 mount.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 8.8K Sep 15 15:37 shell.cpp
+-rw------- 1 adrienabbey adrienabbey 8.9K Oct 29  2020 shell.cpp~
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.8K Sep 15 15:37 simdisk.cpp
+-rw-r--r-- 1 adrienabbey adrienabbey 2.7K Sep 24  2020 typescript
+-rw-rw-r-- 1 adrienabbey adrienabbey  111 Sep 15 15:37 user.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.8K Sep 15 15:37 volume.cpp
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ chmod Make [Kf[K[K[K[K[K66[K[K650[K[K4[K60[K[K[K777 Makefile 
+[?2004l[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ chmod [K[K[K[K[K[Kla -hla
+[?2004ltotal 104K
+drwx------ 2 adrienabbey adrienabbey 4.0K Sep 15 15:37 [0m[01;34m.[0m
+drwxrwxr-x 4 adrienabbey adrienabbey 4.0K Sep 15 15:39 [01;34m..[0m
+-rw------- 1 adrienabbey adrienabbey   17 Apr  2  2007 .gitignore
+-rwxrwxrwx 1 adrienabbey adrienabbey  722 Jul  7  2020 [01;32mMakefile[0m
+-rw-rw-r-- 1 adrienabbey adrienabbey 2.9K Sep 15 15:37 bitvector.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 5.4K Sep 15 15:37 directory.cpp
+-rw------- 1 adrienabbey adrienabbey  174 Apr  2  2007 diskParams.dat
+-rw-rw-r-- 1 adrienabbey adrienabbey 4.2K Sep 15 15:37 file.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.9K Sep 15 15:37 fs33types.hpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 7.5K Sep 15 15:37 inodes.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.6K Sep 15 15:37 mount.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 8.8K Sep 15 15:37 shell.cpp
+-rw------- 1 adrienabbey adrienabbey 8.9K Oct 29  2020 shell.cpp~
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.8K Sep 15 15:37 simdisk.cpp
+-rw-r--r-- 1 adrienabbey adrienabbey 2.7K Sep 24  2020 typescript
+-rw-rw-r-- 1 adrienabbey adrienabbey  111 Sep 15 15:37 user.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.8K Sep 15 15:37 volume.cpp
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ chmod 600[K[K[K500[K[K[K400 Makefile 
+[?2004l[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls
+[?2004lMakefile       diskParams.dat  inodes.cpp  shell.cpp~   user.cpp
+bitvector.cpp  file.cpp        mount.cpp   simdisk.cpp  volume.cpp
+directory.cpp  fs33types.hpp   shell.cpp   typescript
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls- [K[K[Ks -hla
+[?2004ltotal 104K
+drwx------ 2 adrienabbey adrienabbey 4.0K Sep 15 15:37 [0m[01;34m.[0m
+drwxrwxr-x 4 adrienabbey adrienabbey 4.0K Sep 15 15:39 [01;34m..[0m
+-rw------- 1 adrienabbey adrienabbey   17 Apr  2  2007 .gitignore
+-r-------- 1 adrienabbey adrienabbey  722 Jul  7  2020 Makefile
+-rw-rw-r-- 1 adrienabbey adrienabbey 2.9K Sep 15 15:37 bitvector.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 5.4K Sep 15 15:37 directory.cpp
+-rw------- 1 adrienabbey adrienabbey  174 Apr  2  2007 diskParams.dat
+-rw-rw-r-- 1 adrienabbey adrienabbey 4.2K Sep 15 15:37 file.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.9K Sep 15 15:37 fs33types.hpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 7.5K Sep 15 15:37 inodes.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.6K Sep 15 15:37 mount.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 8.8K Sep 15 15:37 shell.cpp
+-rw------- 1 adrienabbey adrienabbey 8.9K Oct 29  2020 shell.cpp~
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.8K Sep 15 15:37 simdisk.cpp
+-rw-r--r-- 1 adrienabbey adrienabbey 2.7K Sep 24  2020 typescript
+-rw-rw-r-- 1 adrienabbey adrienabbey  111 Sep 15 15:37 user.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.8K Sep 15 15:37 volume.cpp
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls -hla[Kchmod 400 Makefile [1P[1@6
+[?2004l[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ chmod 600 Makefile [12Pls -hla
+[?2004ltotal 104K
+drwx------ 2 adrienabbey adrienabbey 4.0K Sep 15 15:37 [0m[01;34m.[0m
+drwxrwxr-x 4 adrienabbey adrienabbey 4.0K Sep 15 15:39 [01;34m..[0m
+-rw------- 1 adrienabbey adrienabbey   17 Apr  2  2007 .gitignore
+-rw------- 1 adrienabbey adrienabbey  722 Jul  7  2020 Makefile
+-rw-rw-r-- 1 adrienabbey adrienabbey 2.9K Sep 15 15:37 bitvector.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 5.4K Sep 15 15:37 directory.cpp
+-rw------- 1 adrienabbey adrienabbey  174 Apr  2  2007 diskParams.dat
+-rw-rw-r-- 1 adrienabbey adrienabbey 4.2K Sep 15 15:37 file.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.9K Sep 15 15:37 fs33types.hpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 7.5K Sep 15 15:37 inodes.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.6K Sep 15 15:37 mount.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 8.8K Sep 15 15:37 shell.cpp
+-rw------- 1 adrienabbey adrienabbey 8.9K Oct 29  2020 shell.cpp~
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.8K Sep 15 15:37 simdisk.cpp
+-rw-r--r-- 1 adrienabbey adrienabbey 2.7K Sep 24  2020 typescript
+-rw-rw-r-- 1 adrienabbey adrienabbey  111 Sep 15 15:37 user.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.8K Sep 15 15:37 volume.cpp
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ch[K[Ksudo [K[K[K[K[Kchown root:root Makefile
+[?2004lchown: changing ownership of 'Makefile': Operation not permitted
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls -hla
+[?2004ltotal 104K
+drwx------ 2 adrienabbey adrienabbey 4.0K Sep 15 15:37 [0m[01;34m.[0m
+drwxrwxr-x 4 adrienabbey adrienabbey 4.0K Sep 15 15:39 [01;34m..[0m
+-rw------- 1 adrienabbey adrienabbey   17 Apr  2  2007 .gitignore
+-rw------- 1 adrienabbey adrienabbey  722 Jul  7  2020 Makefile
+-rw-rw-r-- 1 adrienabbey adrienabbey 2.9K Sep 15 15:37 bitvector.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 5.4K Sep 15 15:37 directory.cpp
+-rw------- 1 adrienabbey adrienabbey  174 Apr  2  2007 diskParams.dat
+-rw-rw-r-- 1 adrienabbey adrienabbey 4.2K Sep 15 15:37 file.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.9K Sep 15 15:37 fs33types.hpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 7.5K Sep 15 15:37 inodes.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.6K Sep 15 15:37 mount.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 8.8K Sep 15 15:37 shell.cpp
+-rw------- 1 adrienabbey adrienabbey 8.9K Oct 29  2020 shell.cpp~
+-rw-rw-r-- 1 adrienabbey adrienabbey 3.8K Sep 15 15:37 simdisk.cpp
+-rw-r--r-- 1 adrienabbey adrienabbey 2.7K Sep 24  2020 typescript
+-rw-rw-r-- 1 adrienabbey adrienabbey  111 Sep 15 15:37 user.cpp
+-rw-rw-r-- 1 adrienabbey adrienabbey 6.8K Sep 15 15:37 volume.cpp
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ ls -hlachown root:root Makefilels -hla[K[Kcmp shell.cpp shell.cpp~
+[?2004lshell.cpp shell.cpp~ differ: byte 159, line 10
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ cmp shell.cpp shell.cpp~ -l
+[?2004l 159 146  40
+ 160 166 146
+ 161  73 166
+ 162  40  73
+ 163  57  40
+ 164  57  40
+ 166 123  40
+ 167 165  40
+ 168 163  40
+ 169 160  40
+ 170 151  40
+ 171 143  40
+ 172 151  40
+ 173 157  40
+ 174 165  40
+ 175 163  40
+ 176  41  40
+ 177  12  40
+ 178 104  40
+ 179 151  57
+ 180 162  57
+ 181 145  40
+ 182 143 123
+ 183 164 165
+ 184 157 163
+ 185 162 160
+ 186 171 151
+ 187  40 143
+ 188  52 151
+ 189 167 157
+ 190 144 165
+ 191  73 163
+ 192  40  41
+ 193  40  12
+ 194  57 104
+ 195  57 151
+ 196  40 162
+ 197 123 145
+ 198 165 143
+ 199 163 164
+ 200 160 157
+ 201 151 162
+ 202 143 171
+ 203 151  40
+ 204 157  52
+ 205 165  40
+ 206 163 167
+ 207  41 144
+ 208  12  73
+ 209  12  40
+ 210  43  40
+ 211 144  40
+ 212 145  40
+ 213 146  40
+ 214 151  40
+ 215 156  40
+ 216 145  40
+ 218 156  40
+ 219 101  40
+ 220 162  40
+ 221 147  40
+ 222 163  40
+ 223 115  40
+ 224 141  40
+ 225 170  40
+ 226  40  57
+ 227  61  57
+ 228  60  40
+ 229  12 123
+ 230 143 165
+ 231 150 163
+ 232 141 160
+ 233 162 151
+ 234  40 143
+ 235 164 151
+ 236 171 157
+ 237 160 165
+ 238 145 163
+ 239 163  41
+ 240 133  12
+ 241  61  12
+ 242  40  43
+ 243  53 144
+ 244  40 145
+ 245 156 146
+ 246 101 151
+ 247 162 156
+ 248 147 145
+ 249 163  40
+ 250 115 156
+ 251 141 101
+ 252 170 162
+ 253 135 147
+ 254  73 163
+ 255  40 115
+ 256  57 141
+ 257  57 170
+ 259  53  61
+ 260  61  60
+ 261  40  12
+ 262 146 143
+ 263 157 150
+ 264 162 141
+ 265  40 162
+ 266 134  40
+ 267  60 164
+ 268  12 171
+ 269  12 160
+ 270  57 145
+ 271  52 163
+ 272  40 133
+ 273 101  61
+ 274 156  53
+ 275  40 156
+ 279  55 163
+ 280 165 115
+ 281 155 141
+ 282 145 170
+ 283 156 135
+ 284 164  73
+ 285  40  11
+ 286 146  11
+ 287 157  57
+ 288 162  57
+ 290 157  53
+ 291 156  61
+ 292 145  40
+ 293  40 146
+ 295 146 162
+ 297 157 134
+ 298 165  60
+ 299 162  12
+ 300  40  12
+ 301 143  57
+ 302 157  52
+ 303 155  40
+ 304 155 101
+ 305 141 156
+ 306 156  40
+ 307 144 101
+ 308 163 162
+ 309  40 147
+ 310 151  55
+ 311 163 165
+ 312  40 155
+ 314 151 156
+ 316 150  40
+ 317 145 146
+ 318 162 157
+ 319  40 162
+ 320 141  40
+ 321  40 157
+ 322  42 156
+ 323 167 145
+ 324 157  40
+ 325 162 157
+ 326 144 146
+ 327  42  40
+ 328  40 157
+ 329  50 165
+ 330 141 162
+ 332 156 143
+ 333 165 157
+ 334 154 155
+ 335 154 155
+ 336  12 141
+ 337  40 156
+ 338  52 144
+ 339  40 163
+ 340 164  40
+ 341 145 151
+ 342 162 163
+ 343 155  40
+ 344 151 145
+ 345 156 151
+ 346 141 164
+ 347 164 150
+ 349 144 162
+ 351 163 141
+ 352 164  40
+ 353 162  42
+ 354 151 167
+ 355 156 157
+ 356 147 162
+ 357  51 144
+ 358  54  42
+ 360 157  50
+ 361 162 141
+ 363 141 156
+ 364 156 165
+ 365  40 154
+ 366 165 154
+ 367 156  12
+ 368 163  40
+ 369 151  52
+ 370 147  40
+ 371 156 164
+ 373 144 162
+ 374  40 155
+ 377 164 141
+ 378 145 164
+ 379 147 145
+ 380 145 144
+ 381 162  40
+ 382  56 163
+ 383  40 164
+ 384  40 162
+ 385 127 151
+ 386 145 156
+ 387  40 147
+ 388 163  51
+ 389 164  54
+ 390 157  40
+ 391 162 157
+ 392 145 162
+ 394 142 141
+ 395 157 156
+ 396 164  40
+ 397 150 165
+ 398  12 156
+ 399  40 163
+ 400  52 151
+ 401  40 147
+ 402 162 156
+ 404 160 144
+ 405 162  40
+ 406 145 151
+ 407 163 156
+ 408 145 164
+ 409 156 145
+ 410 164 147
+ 411 141 145
+ 412 164 162
+ 413 151  56
+ 414 157  40
+ 415 156  40
+ 416 163 127
+ 417  40 145
+ 418 157  40
+ 419 146 163
+ 420  40 164
+ 421 164 157
+ 422 150 162
+ 425 141 142
+ 426 162 157
+ 427 147 164
+ 428 165 150
+ 429 155  12
+ 430 145  40
+ 431 156  52
+ 432 164  40
+ 433  56 162
+ 434  40 145
+ 435  52 160
+ 436  57 162
+ 437  12 145
+ 438  12 163
+ 439 143 145
+ 440 154 156
+ 441 141 164
+ 442 163 141
+ 443 163 164
+ 444  40 151
+ 445 101 157
+ 446 162 156
+ 447 147 163
+ 448  12  40
+ 449 173 157
+ 450  12 146
+ 451 160  40
+ 452 165 164
+ 453 142 150
+ 454 154 145
+ 455 151  40
+ 456 143 141
+ 457  72 162
+ 458  12 147
+ 459  40 165
+ 460  40 155
+ 461 143 145
+ 462 150 156
+ 463 141 164
+ 464 162  56
+ 467 163  57
+ 468  73  12
+ 470  40 143
+ 471  40 154
+ 472 165 141
+ 473 151 163
+ 474 156 163
+ 475 164  40
+ 476  40 101
+ 477 165 162
+ 478  73 147
+ 479  12  40
+ 480 175 173
+ 481  40  12
+ 482 141 160
+ 483 162 165
+ 484 147 142
+ 485 133 154
+ 486 156 151
+ 487 101 143
+ 488 162  72
+ 489 147  12
+ 490 163  40
+ 491 115  40
+ 492 141 143
+ 493 170 150
+ 494 135 141
+ 495  73 162
+ 496  12  40
+ 497  12  52
+ 498 165 163
+ 499 151  73
+ 500 156  12
+ 501 164  40
+ 503 156 165
+ 504 101 151
+ 505 162 156
+ 506 147 164
+ 507 163  40
+ 508  40 165
+ 509  75  73
+ 510  40  12
+ 511  60 175
+ 512  73  40
+ 513  12 141
+ 514  12 162
+ 515 165 147
+ 516 151 133
+ 518 164 101
+ 519  40 162
+ 520 124 147
+ 521 117 163
+ 522 104 115
+ 523 117 141
+ 524  50 170
+ 525  51 135
+ 526  12  73
+ 527 173  12
+ 529  40 165
+ 530  40 151
+ 531 160 156
+ 532 162 164
+ 533 151  40
+ 535 164 101
+ 536 146 162
+ 537  50 147
+ 538  42 163
+ 539 164  40
+ 540 157  75
+ 542 142  60
+ 543 145  73
+ 544  40  12
+ 545 144  12
+ 546 157 165
+ 547 156 151
+ 548 145 156
+ 549  41 164
+ 550 134  40
+ 551 156 124
+ 552  42 117
+ 553  51 104
+ 554  73 117
+ 555  12  50
+ 556  40  51
+ 557  40  12
+ 558 162 173
+ 559 145  12
+ 560 164  40
+ 561 165  40
+ 562 162 160
+ 563 156 162
+ 564  40 151
+ 565  60 156
+ 566  73 164
+ 567  12 146
+ 568 175  50
+ 569  12  42
+ 570  12 164
+ 571 165 157
+ 572 151  40
+ 573 156 142
+ 574 164 145
+ 576 124 144
+ 577 117 157
+ 578 104 156
+ 579 117 145
+ 580  50  41
+ 581 143 134
+ 582 150 156
+ 583 141  42
+ 584 162  51
+ 585  40  73
+ 586  52  12
+ 587 160  40
+ 588  51  40
+ 589  12 162
+ 590 173 145
+ 591  12 164
+ 592  40 165
+ 593  40 162
+ 594 160 156
+ 595 162  40
+ 596 151  60
+ 597 156  73
+ 598 164  12
+ 599 146 175
+ 600  50  12
+ 601  42  12
+ 602  45 165
+ 603 163 151
+ 604  40 156
+ 606 157  40
+ 607  40 124
+ 608 142 117
+ 609 145 104
+ 610  40 117
+ 611 144  50
+ 612 157 143
+ 613 156 150
+ 614 145 141
+ 615  41 162
+ 616 134  40
+ 617 156  52
+ 618  42 160
+ 619  54  51
+ 620  40  12
+ 621 160 173
+ 622  51  12
+ 623  73  40
+ 624  12  40
+ 625  40 160
+ 626  40 162
+ 627 162 151
+ 628 145 156
+ 630 165 146
+ 631 162  50
+ 632 156  42
+ 633  40  45
+ 634  60 163
+ 635  73  40
+ 636  12 164
+ 637 175 157
+ 638  12  40
+ 639  12 142
+ 640 165 145
+ 641 151  40
+ 642 156 144
+ 643 164 157
+ 644  40 156
+ 645 151 145
+ 646 163  41
+ 647 104 134
+ 648 151 156
+ 649 147  42
+ 650 151  54
+ 651 164  40
+ 652  50 160
+ 653 143  51
+ 654 150  73
+ 655 141  12
+ 656 162  40
+ 658 143 162
+ 659  51 145
+ 660  12 164
+ 661 173 165
+ 662  12 162
+ 663  40 156
+ 665 162  60
+ 666 145  73
+ 667 164  12
+ 668 165 175
+ 669 162  12
+ 670 156  12
+ 671  40 165
+ 672  47 151
+ 673  60 156
+ 674  47 164
+ 676  74 151
+ 677  75 163
+ 678  40 104
+ 679 143 151
+ 680  40 147
+ 681  46 151
+ 682  46 164
+ 683  40  50
+ 685  40 150
+ 686  74 141
+ 687  75 162
+ 689  47 143
+ 690  71  51
+ 691  47  12
+ 692  73 173
+ 694 175  40
+ 695  12  40
+ 696  12 162
+ 697 165 145
+ 698 151 164
+ 699 156 165
+ 700 164 162
+ 701  40 156
+ 702 151  40
+ 703 163  47
+ 704 101  60
+ 705 154  47
+ 706 160  40
+ 707 150  74
+ 708 141  75
+ 709 116  40
+ 710 165 143
+ 711 155  40
+ 712 104  46
+ 713 157  46
+ 714 164  40
+ 715  50 143
+ 716 143  40
+ 717 150  74
+ 718 141  75
+ 719 162  40
+ 720  40  47
+ 721 143  71
+ 722  51  47
+ 723  12  73
+ 724 173  12
+ 725  12 175
+ 726  40  12
+ 727  40  12
+ 728 162 165
+ 729 145 151
+ 730 164 156
+ 731 165 164
+ 732 162  40
+ 733 156 151
+ 734  40 163
+ 735 143 101
+ 736  40 154
+ 737  75 160
+ 738  75 150
+ 739  40 141
+ 740  47 116
+ 741  56 165
+ 742  47 155
+ 743  40 104
+ 744 174 157
+ 745 174 164
+ 746  40  50
+ 747  47 143
+ 748 141 150
+ 749  47 141
+ 750  40 162
+ 751  74  40
+ 752  75 143
+ 753  40  51
+ 754 143  12
+ 755  40 173
+ 756  46  12
+ 757  46  40
+ 759 143 162
+ 760  40 145
+ 761  74 164
+ 762  75 165
+ 763  40 162
+ 764  47 156
+ 765 172  40
+ 766  47 143
+ 768 174  75
+ 769 174  75
+ 772 101  56
+ 775  74 174
+ 776  75 174
+ 778 143  47
+ 779  40 141
+ 780  46  47
+ 781  46  40
+ 782  40  74
+ 783 143  75
+ 785  74 143
+ 786  75  40
+ 787  40  46
+ 788  47  46
+ 789 132  40
+ 790  47 143
+ 792 174  74
+ 793 174  75
+ 796  60 172
+ 798  40  12
+ 799  74  40
+ 800  75  40
+ 802 143  40
+ 804  46  40
+ 805  46 174
+ 806  40 174
+ 807 143  40
+ 808  40  47
+ 809  74 101
+ 810  75  47
+ 812  47  74
+ 813  71  75
+ 814  47  40
+ 815  73 143
+ 816  12  40
+ 817 175  46
+ 818  12  46
+ 819  12  40
+ 820 151 143
+ 821 156  40
+ 822 164  74
+ 823  40  75
+ 824 164  40
+ 825 157  47
+ 826 116 132
+ 827 165  47
+ 828 155  40
+ 829  50 174
+ 830 143 174
+ 831 157  40
+ 832 156  47
+ 833 163  60
+ 834 164  47
+ 836 143  74
+ 837 150  75
+ 838 141  40
+ 839 162 143
+ 841  52  46
+ 842 160  46
+ 843  51  40
+ 844  12 143
+ 845 173  40
+ 846  12  74
+ 847  40  75
+ 849 162  47
+ 850 145  71
+ 851 164  47
+ 852 165  73
+ 853 162  12
+ 854 156 175
+ 855  40  12
+ 856  50  12
+ 857 160 151
+ 858  40 156
+ 859  41 164
+ 860  75  40
+ 861  40 164
+ 862  60 157
+ 863  40 116
+ 864  46 165
+ 865  46 155
+ 866  40  50
+ 867  47 143
+ 868  60 157
+ 869  47 156
+ 870  40 163
+ 871  74 164
+ 872  75  40
+ 873  40 143
+ 874  52 150
+ 875 160 141
+ 876  40 162
+ 877  46  40
+ 878  46  52
+ 879  40 160
+ 880  52  51
+ 881 160  12
+ 882  40 173
+ 883  74  12
+ 884  75  40
+ 886  47 162
+ 887  71 145
+ 888  47 164
+ 889  40 165
+ 890  77 162
+ 891  40 156
+ 892 141  40
+ 893 164  50
+ 894 157 160
+ 895 151  40
+ 896  50  41
+ 897 160  75
+ 898  51  40
+ 899  40  60
+ 900  72  40
+ 901  40  46
+ 902  60  46
+ 903  51  40
+ 904  73  47
+ 905  12  60
+ 906 175  47
+ 907  12  40
+ 908  12  74
+ 909 123  75
+ 910 151  40
+ 911 155  52
+ 912 104 160
+ 913 151  40
+ 914 163  46
+ 915 153  46
+ 918 155 160
+ 919 153  40
+ 920 123  74
+ 921 151  75
+ 922 155  40
+ 923 104  47
+ 924 151  71
+ 925 163  47
+ 926 153  40
+ 927  50  77
+ 928 142  40
+ 929 171 141
+ 931 145 157
+ 932  40 151
+ 933  52  50
+ 934 156 160
+ 935 141  51
+ 936 155  40
+ 937 145  72
+ 938  51  40
+ 939  12  60
+ 940 173  51
+ 941  12  73
+ 942  40  12
+ 943  40 175
+ 944 123  12
+ 945 151  12
+ 946 155 123
+ 947 104 151
+ 948 151 155
+ 949 163 104
+ 950 153 151
+ 951  40 163
+ 952  52 153
+ 953 163  40
+ 954 151  52
+ 955 155  40
+ 956 104 155
+ 957 151 153
+ 958 163 123
+ 959 153 151
+ 960  40 155
+ 961  75 104
+ 962  40 151
+ 963 156 163
+ 964 145 153
+ 965 167  50
+ 966  40 142
+ 967 123 171
+ 968 151 164
+ 969 155 145
+ 970 104  40
+ 971 151  52
+ 972 163 156
+ 973 153 141
+ 974  50 155
+ 975 156 145
+ 976 141  51
+ 977 155  12
+ 978 145 173
+ 979  54  12
+ 981  60  40
+ 982  51 123
+ 983  73 151
+ 984  12 155
+ 985  40 104
+ 986  40 151
+ 987 151 163
+ 988 146 153
+ 990  50  52
+ 991 163  40
+ 992 151 163
+ 993 155 151
+ 994 104 155
+ 995 151 104
+ 996 163 151
+ 997 153 163
+ 998  55 153
+ 999  76  40
+1000 156  75
+1001 123  40
+1002 145 156
+1003 143 145
+1004 164 167
+1005 157  40
+1006 162 123
+1007 163 151
+1008 120 155
+1009 145 104
+1010 162 151
+1011 104 163
+1012 151 153
+1013 163  50
+1014 153 156
+1015  40 141
+1016  75 155
+1017  75 145
+1018  40  54
+1019  60  40
+1020  51  60
+1021  12  51
+1022  40  73
+1023  40  12
+1024 173  40
+1025  12  40
+1026  40 151
+1027  40 146
+1029  40  50
+1030 160 163
+1031 162 151
+1032 151 155
+1033 156 104
+1034 164 151
+1035 146 163
+1036  50 153
+1037  42  55
+1038 106  76
+1039 141 156
+1040 151 123
+1041 154 145
+1042 145 143
+1043 144 164
+1044  40 157
+1045 164 162
+1046 157 163
+1047  40 120
+1048 146 145
+1049 151 162
+1050 156 104
+1051 144 151
+1052  57 163
+1053 143 153
+1054 162  40
+1055 145  75
+1056 141  75
+1057 164  40
+1058 145  60
+1059  40  51
+1060 163  40
+1061 151 173
+1062 155  12
+1063 104  40
+1064 151  40
+1065 163  40
+1066 153  40
+1067  40 160
+1068 156 162
+1069 141 151
+1070 155 156
+1071 145 164
+1072 144 146
+1073  40  50
+1074  45  42
+1075 163 106
+1076 134 141
+1077 156 151
+1078  42 154
+1079  54 145
+1080  40 144
+1081 156  40
+1082 141 164
+1083 155 157
+1084 145  40
+1085  51 146
+1086  73 151
+1087  12 156
+1088  40 144
+1089  40  57
+1090  40 143
+1091  40 162
+1092 144 145
+1093 145 141
+1094 154 164
+1096 164  40
+1097 145 163
+1098  40 151
+1099 163 155
+1100 151 104
+1101 155 151
+1102 104 163
+1103 151 153
+1104 163  40
+1105 153 156
+1106  73 141
+1107  12 155
+1108  40 145
+1109  40 144
+1111  40  45
+1113 151 134
+1114 155 156
+1115 104  42
+1116 151  54
+1117 163  40
+1118 153 156
+1119  40 141
+1120  75 155
+1121  40 145
+1122  60  51
+1127 175  40
+1128  12  40
+1129  40 144
+1130  40 145
+1131 162 154
+1134 165 145
+1135 162  40
+1136 156 163
+1137  40 151
+1138 163 155
+1139 151 104
+1140 155 151
+1141 104 163
+1142 151 153
+1143 163  73
+1144 153  12
+1145  73  40
+1146  12  40
+1147 175  40
+1148  12  40
+1149  12 163
+1150 166 151
+1151 157 155
+1152 151 104
+1153 144 151
+1154  40 163
+1155 144 153
+1156 157  40
+1157 115  75
+1158 141  40
+1159 153  60
+1160 145  73
+1161 104  12
+1162 151  40
+1163 163  40
+1164 153 175
+1165  50  12
+1166 101  40
+1167 162  40
+1168 147 162
+1169  40 145
+1170  52 164
+1171 141 165
+1172  51 162
+1173  12 156
+1174 173  40
+1175  12 163
+1176  40 151
+1177  40 155
+1178 123 104
+1180 155 163
+1181 104 153
+1182 151  73
+1183 163  12
+1184 153 175
+1185  40  12
+1186  52  12
+1187 163 166
+1188 151 157
+1189 155 151
+1190 104 144
+1191 151  40
+1192 163 144
+1193 153 157
+1194  40 115
+1195  75 141
+1196  40 153
+1197 155 145
+1198 153 104
+1199 123 151
+1200 151 163
+1201 155 153
+1202 104  50
+1203 151 101
+1204 163 162
+1205 153 147
+1206  50  40
+1207  50  52
+1208 142  40
+1209 171 141
+1210 164  51
+1211 145  12
+1212  40 173
+1213  52  12
+1214  51  40
+1215 141  40
+1216 133 123
+1217  60 151
+1218 135 155
+1219  56 104
+1220 163 151
+1221  51 163
+1222  73 153
+1223  12  40
+1224  40  52
+1226 151 163
+1227 146 151
+1228  40 155
+1229  50 104
+1230 163 151
+1231 151 163
+1232 155 153
+1233 104  40
+1234 151  75
+1235 163  40
+1236 153 155
+1237  40 153
+1238  75 123
+1239  75 151
+1240  40 155
+1241  60 104
+1242  51 151
+1243  12 163
+1244  40 153
+1245  40  50
+1246  40  50
+1247  40 142
+1248 162 171
+1249 145 164
+1250 164 145
+1251 165  40
+1252 162  52
+1253 156  51
+1254  73  40
+1255  12 141
+1256  40 133
+1257  40  60
+1258 160 135
+1259 162  56
+1260 151 163
+1261 156  51
+1262 164  73
+1263 146  12
+1264  50  40
+1265  42  40
+1266 156 151
+1267 145 146
+1268 167  40
+1269  40  50
+1270 123 163
+1277  50  40
+1278  45  75
+1279 163  75
+1280  51  40
+1281  40  60
+1282  75  51
+1283  40  12
+1284  45  40
+1285 160  40
+1286  54  40
+1288 156 162
+1289 123 145
+1290 145 164
+1291 143 165
+1292 164 162
+1293 157 156
+1294 162  73
+1295 163  12
+1296 120  40
+1297 145  40
+1298 162 160
+1299 104 162
+1301 163 156
+1302 153 164
+1303  75 146
+1304  45  50
+1305 144  42
+1306  54 156
+1307  42 145
+1308  12 167
+1310  40 123
+1311  40 151
+1312  40 155
+1313  40 104
+1314  40 151
+1315  40 163
+1316  40 153
+1317  40  50
+1318  42  45
+1319 156 163
+1320 102  51
+1321 171  40
+1322 164  75
+1323 145  40
+1324 163  45
+1325 120 160
+1326 145  54
+1327 162  40
+1328 123 156
+1329 145 123
+1330 143 145
+1331 164 143
+1332 157 164
+1333 162 157
+1334  75 162
+1335  45 163
+1336 144 120
+1337  54 145
+1338  40 162
+1339 163 104
+1341 155 163
+1342 104 153
+1343 151  75
+1344 163  45
+1345 153 144
+1346 116  54
+1347 165  42
+1348 155  12
+1349  75  11
+1350  45  40
+1351 144  42
+1352  51 156
+1353 134 102
+1354 156 171
+1355  42 164
+1356  54 145
+1357  12 163
+1358  40 120
+1359  40 145
+1360  40 162
+1361  40 123
+1362  40 145
+1363  40 143
+1364  40 164
+1365  40 157
+1366  40 162
+1367 163  75
+1368 151  45
+1369 155 144
+1370 104  54
+1371 151  40
+1373 153 151
+1374  55 155
+1375  76 104
+1376 156 151
+1377 141 163
+1378 155 153
+1379 145 116
+1380  54 165
+1381  40 155
+1382  50  75
+1383 166  45
+1384 157 144
+1385 151  51
+1386 144 134
+1387  40 156
+1388  52  42
+1389  51  54
+1390 163  12
+1391 151  11
+1392 155  40
+1393 104 163
+1395 163 155
+1396 153 104
+1397  54 151
+1398  40 163
+1399 163 153
+1400 151  55
+1401 155  76
+1402 104 156
+1403 151 141
+1404 163 155
+1405 153 145
+1406  55  54
+1407  76  40
+1408 156  50
+1409 123 166
+1410 145 157
+1411 143 151
+1412 164 144
+1413 157  52
+1414 162  51
+1415 163  40
+1416 120 163
+1417 145 151
+1418 162 155
+1424  12  40
+1425  40 163
+1426  40 151
+1427  40 155
+1428  40 104
+1429  40 151
+1430  40 163
+1431  40 153
+1432  40  55
+1433  40  76
+1434 163 156
+1435 151 123
+1436 155 145
+1437 104 143
+1438 151 164
+1439 163 157
+1440 153 162
+1441  55 163
+1442  76 120
+1443 156 145
+1444 102 162
+1445 171 104
+1446 164 151
+1447 145 163
+1448 163 153
+1449 120  54
+1450 145  12
+1451 162  11
+1452 123  40
+1453 145 163
+1454 143 151
+1455 164 155
+1456 157 104
+1457 162 151
+1458  54 163
+1459  40 153
+1460 163  55
+1461 151  76
+1462 155 156
+1463 104 102
+1464 151 171
+1465 163 164
+1466 153 145
+1467  55 163
+1468  76 120
+1469 163 145
+1470 151 162
+1471 155 123
+1472 104 145
+1473 151 143
+1474 163 164
+1475 153 157
+1476 116 162
+1477 165  54
+1478 155  40
+1479  51 163
+1480  73 151
+1481  12 155
+1482  40 104
+1483  40 151
+1484 144 163
+1485 145 153
+1486 154  55
+1487 145  76
+1488 164 163
+1489 145 151
+1490  40 155
+1491 163 104
+1493 155 163
+1494 104 153
+1495 151 116
+1496 163 165
+1497 153 155
+1498  73  51
+1499  12  73
+1500 175  12
+1501  12  40
+1502  12  40
+1503 166 144
+1504 157 145
+1505 151 154
+1506 144 145
+1507  40 164
+1508 144 145
+1509 157  40
+1510 127 163
+1511 162 151
+1512 151 155
+1513 164 104
+1514 145 151
+1515 104 163
+1516 151 153
+1517 163  73
+1518 153  12
+1519  50 175
+1520 101  12
+1521 162  12
+1522 147 166
+1523  40 157
+1524  52 151
+1525 141 144
+1526  51  40
+1527  12 144
+1528 173 157
+1529  12 127
+1530  40 162
+1531  40 151
+1532 123 164
+1533 151 145
+1534 155 104
+1535 104 151
+1536 151 163
+1537 163 153
+1538 153  50
+1539  40 101
+1540  52 162
+1541 163 147
+1542 151  40
+1543 155  52
+1544 104  40
+1545 151 141
+1546 163  51
+1547 153  12
+1548  40 173
+1549  75  12
+1551 155  40
+1552 153 123
+1553 123 151
+1554 151 155
+1555 155 104
+1556 104 151
+1557 151 163
+1558 163 153
+1559 153  40
+1560  50  52
+1561  50  40
+1562 142 163
+1563 171 151
+1564 164 155
+1565 145 104
+1566  40 151
+1567  52 163
+1568  51 153
+1569 141  40
+1570 133  75
+1571  60  40
+1572 135 155
+1573  56 153
+1574 163 123
+1575  51 151
+1576  73 155
+1577  12 104
+1578  40 151
+1579  40 163
+1580 151 153
+1581 146  50
+1582  40  50
+1583  50 142
+1584 163 171
+1585 151 164
+1586 155 145
+1587 104  40
+1588 151  52
+1589 163  51
+1590 153  40
+1591  40 141
+1592  75 133
+1593  75  60
+1594  40 135
+1595  60  56
+1596  51 163
+1597  12  51
+1598  40  73
+1599  40  12
+1602 162 151
+1603 145 146
+1604 164  40
+1605 165  50
+1606 162 163
+1607 156 151
+1608  73 155
+1609  12 104
+1610  40 151
+1611  40 163
+1612 143 153
+1613 150  40
+1614 141  75
+1615 162  75
+1617  52  60
+1618 163  51
+1619 164  12
+1621  75  40
+1623 141  40
+1624 133 162
+1625  62 145
+1626 135 164
+1627  56 165
+1628 163 162
+1629  73 156
+1630  40  73
+1631  57  12
+1632  57  40
+1634 141 143
+1635 162 150
+1636 142 141
+1637 151 162
+1638 164  40
+1639 162  52
+1640 141 163
+1641 162 164
+1642 171  40
+1643  40  75
+1644 167  40
+1645 157 141
+1646 162 133
+1647 144  62
+1648  12 135
+1649  40  56
+1650  40 163
+1651 151  73
+1652 146  11
+1653  40  11
+1654  50  57
+1655 163  57
+1656 164  40
+1657  40 141
+1658  75 162
+1659  75 142
+1660  40 151
+1661  60 164
+1662  51 162
+1663  40 141
+1664  40 162
+1665  40 171
+1667  40 167
+1668  40 157
+1669  40 162
+1670  57 144
+1671  57  12
+1673 151  40
+1674 146 151
+1675  40 146
+1676 151  40
+1677 164  50
+1678  40 163
+1679 151 164
+1680 163  40
+1681  40  75
+1682 116  75
+1683 125  40
+1684 114  60
+1685 114  51
+1686  54  11
+1687  40  11
+1688 167  11
+1689 145  57
+1690  40  57
+1691 165  40
+1692 163 151
+1693 145 146
+1695  56 151
+1696  56 164
+1697  56  40
+1698  12 151
+1699  40 163
+1701  40 116
+1702  40 125
+1703 163 114
+1704 164 114
+1705  40  54
+1706  75  40
+1707  40 167
+1708  42 145
+1709 103  40
+1710 105 165
+1711 107 163
+1712  64 145
+1713  63  40
+1714  63  56
+1715  57  56
+1716  66  56
+1717  63  12
+1718  63  40
+1719  57  40
+1720 115  40
+1721 141  40
+1722 164 163
+1723 145 164
+1724 164  40
+1725 151  75
+1726  42  40
+1727  73  42
+1728  12 103
+1729  40 105
+1730  40 107
+1731 143  64
+1732 150  63
+1733 141  63
+1734 162  57
+1735  40  66
+1736 142  63
+1737 165  63
+1738 146  57
+1739 133 115
+1740  61 141
+1741  60 164
+1742  62 145
+1743  64 164
+1744 135 151
+1745  73  42
+1746  40  73
+1747  57  12
+1748  57  40
+1750 141 143
+1751 163 150
+1752 163 141
+1753 165 162
+1754 155  40
+1755 151 142
+1756 156 165
+1757 147 146
+1758  40 133
+1759 156  61
+1760 102  60
+1761 171  62
+1762 164  64
+1763 145 135
+1764 163  73
+1765 120  11
+1766 145  11
+1767 162  57
+1768 123  57
+1769 145  40
+1770 143 141
+1771 164 163
+1772 157 163
+1773 162 165
+1774 115 155
+1775 101 151
+1776 130 156
+1777  40 147
+1778  74  40
+1779  40 156
+1780  61 102
+1781  60 171
+1782  62 164
+1783  64 145
+1784  12 163
+1785  40 120
+1786  40 145
+1787 146 162
+1788 157 123
+1789 162 145
+1790  40 143
+1791  50 164
+1792 165 157
+1793 151 162
+1794 156 115
+1795 164 101
+1796  40 130
+1797 155  40
+1798  40  74
+1799  75  40
+1800  40  61
+1801 163  60
+1802 164  62
+1803 162  64
+1804 154  12
+1805 145  40
+1806 156  40
+1807  50 146
+1808 163 157
+1809 164 162
+1810  51  40
+1811  54  50
+1812  40 165
+1813 156 151
+1814  40 156
+1815  75 164
+1817  60 155
+1818  73  40
+1819  40  75
+1820 156  40
+1821  40 163
+1822  74 164
+1823  40 162
+1824  61 154
+1825  60 145
+1826  62 156
+1827  64  50
+1828  40 163
+1829  55 164
+1830  40  51
+1831 155  54
+1832  73  40
+1833  40 156
+1834 156  40
+1835  40  75
+1836  53  40
+1837  75  60
+1838  40  73
+1839 155  40
+1840  51 156
+1841  12  40
+1842  40  74
+1844  40  61
+1845  40  60
+1846 155  62
+1847 145  64
+1848 155  40
+1849 143  55
+1850 160  40
+1851 171 155
+1852  50  73
+1853 142  40
+1854 165 156
+1855 146  40
+1856  40  53
+1857  53  75
+1859 156 155
+1860  54  51
+1861  40  12
+1862 163  40
+1863 164  40
+1864  54  40
+1867  51 145
+1868  73 155
+1869  40 143
+1870  57 160
+1871  57 171
+1872  40  50
+1873 146 142
+1874 151 165
+1875 154 146
+1876 154  40
+1877  40  53
+1878 167  40
+1879 151 156
+1880 164  54
+1881 150  40
+1882  40 163
+1883 163 164
+1884 145  54
+1885 166  40
+1886 145 155
+1887 162  51
+1888 141  73
+1889 154  11
+1890  40  57
+1891 143  57
+1892 157  40
+1893 160 146
+1895 145 154
+1896 163 154
+1898 157 167
+1899 146 151
+1900  40 164
+1901 163 150
+1902 164  40
+1903  12 163
+1904  40 145
+1905  40 166
+1906 165 145
+1907 151 162
+1908 156 141
+1909 164 154
+1911 162 143
+1912  40 157
+1913  75 160
+1914  40 151
+1915 163 145
+1916 151 163
+1917 155  40
+1918 104 157
+1919 151 146
+1920 163  40
+1921 153 163
+1922  55 164
+1923  76  12
+1924 167  40
+1925 162  40
+1926 151 165
+1927 164 151
+1928 145 156
+1929 123 164
+1930 145  40
+1931 143 162
+1932 164  40
+1933 157  75
+1934 162  40
+1935  50 163
+1936 141 151
+1937 133 155
+1938  61 104
+1939 135 151
+1940  56 163
+1941 165 153
+1942  54  55
+1943  40  76
+1944  50 167
+1945 142 162
+1946 171 151
+1949  40 123
+1950  52 145
+1951  51 143
+1952 142 164
+1953 165 157
+1954 146 162
+1955  51  50
+1956  73 141
+1957  12 133
+1958  40  61
+1959  40 135
+1960 160  56
+1961 162 165
+1962 151  54
+1963 156  40
+1964 164  50
+1965 146 142
+1966  50 171
+1967  42 164
+1968 167 145
+1969 162  40
+1970 151  52
+1971 164  51
+1972 145  40
+1973  64 142
+1974  63 165
+1975  63 146
+1976 144  51
+1977 151  73
+1978 163  12
+1979 153  40
+1980  50  40
+1981  45 160
+1982 144 162
+1983  54 151
+1984  40 156
+1985  45 164
+1986 163 146
+1987  56  50
+1988  56  42
+1989  56 167
+1990  51 162
+1991  40 151
+1992  75 164
+1993  75 145
+1994  40  64
+1995  45  63
+1996 144  63
+1997  40 144
+1998 164 151
+1999 157 163
+2000  40 153
+2001 104  50
+2002 151  45
+2003 163 144
+2004 153  54
+2008 134  56
+2009 156  56
+2010  42  56
+2011  54  51
+2013 141  75
+2014 133  75
+2015  61  40
+2016 135  45
+2017  56 144
+2018 165  40
+2019  54 164
+2020  40 157
+2021 163  40
+2022 164 104
+2023  54 151
+2024  40 163
+2025 162 153
+2026  54  40
+2027  40  45
+2028 141 163
+2029 133 134
+2030  60 156
+2031 135  42
+2032  56  54
+2033 163  40
+2034  51 141
+2035  73 133
+2036  12  61
+2037  40 135
+2038  40  56
+2039 144 165
+2040 145  54
+2041 154  40
+2042 145 163
+2044 145  54
+2046 163 162
+2047 151  54
+2048 155  40
+2049 104 141
+2050 151 133
+2051 163  60
+2052 153 135
+2053  73  56
+2054  12 163
+2055 175  51
+2056  12  73
+2058 166  40
+2059 157  40
+2060 151 144
+2061 144 145
+2062  40 154
+2063 144 145
+2064 157 164
+2065 122 145
+2066 145  40
+2067 141 163
+2068 144 151
+2069 104 155
+2070 151 104
+2071 163 151
+2072 153 163
+2073  50 153
+2074 101  73
+2075 162  12
+2076 147 175
+2077  40  12
+2078  52  12
+2079 141 166
+2080  51 157
+2081  12 151
+2082 173 144
+2083  12  40
+2084  40 144
+2085  40 157
+2086 123 122
+2087 151 145
+2088 155 141
+2089 104 144
+2090 151 104
+2091 163 151
+2092 153 163
+2093  40 153
+2094  52  50
+2095 163 101
+2096 151 162
+2097 155 147
+2098 104  40
+2099 151  52
+2100 163  40
+2101 153 141
+2102  40  51
+2103  75  12
+2104  40 173
+2105 155  12
+2106 153  40
+2107 123  40
+2108 151 123
+2109 155 151
+2110 104 155
+2111 151 104
+2112 163 151
+2113 153 163
+2114  50 153
+2115  50  40
+2116 142  52
+2117 171  40
+2118 164 163
+2119 145 151
+2120  40 155
+2121  52 104
+2122  51 151
+2123 141 163
+2124 133 153
+2125  60  40
+2126 135  75
+2127  56  40
+2128 163 155
+2129  51 153
+2130  73 123
+2131  12 151
+2132  40 155
+2133  40 104
+2135 146 163
+2136  40 153
+2138 163  50
+2139 151 142
+2140 155 171
+2141 104 164
+2142 151 145
+2143 163  40
+2144 153  52
+2145  40  51
+2146  75  40
+2147  75 141
+2148  40 133
+2150  51 135
+2151  12  56
+2152  40 163
+2153  40  51
+2154  40  73
+2155  40  12
+2156 162  40
+2157 145  40
+2158 164 151
+2159 165 146
+2160 162  40
+2161 156  50
+2162  73 163
+2163  12 151
+2164  40 155
+2165  40 104
+2166 143 151
+2167 150 163
+2168 141 153
+2169 162  40
+2170  40  75
+2171 142  75
+2172 165  40
+2173 146  60
+2174 133  51
+2175  61  12
+2176  60  40
+2177  62  40
+2178  64  40
+2179 135  40
+2180  73 162
+2181  40 145
+2182  57 164
+2183  57 165
+2184  40 162
+2185 141 156
+2186 163  73
+2187 163  12
+2188 165  40
+2189 155  40
+2190 151 143
+2191 156 150
+2192 147 141
+2193  40 162
+2194 156  40
+2195 102 142
+2196 171 165
+2197 164 146
+2198 145 133
+2199 163  61
+2200 120  60
+2201 145  62
+2202 162  64
+2203 123 135
+2204 145  73
+2205 143  11
+2206 164  11
+2207 157  57
+2208 162  57
+2209 115  40
+2210 101 141
+2211 130 163
+2212  40 163
+2213  74 165
+2214  40 155
+2215  61 151
+2216  60 156
+2217  62 147
+2218  64  40
+2219  12 156
+2220  40 102
+2221  40 171
+2222 165 164
+2223 151 145
+2224 156 163
+2225 164 120
+2226  40 145
+2228  40 123
+2229  75 145
+2230  40 143
+2231 163 164
+2232 151 157
+2233 155 162
+2234 104 115
+2235 151 101
+2236 163 130
+2237 153  40
+2238  55  74
+2239  76  40
+2240 162  61
+2241 145  60
+2242 141  62
+2243 144  64
+2244 123  12
+2245 145  40
+2246 143  40
+2247 164 165
+2248 157 151
+2249 162 156
+2250  50 164
+2251 141  40
+2252 133 162
+2253  61  40
+2254 135  75
+2255  56  40
+2256 165 163
+2257  54 151
+2258  40 155
+2259  50 104
+2260 142 151
+2261 171 163
+2262 164 153
+2263 145  55
+2264  40  76
+2265  52 162
+2266  51 145
+2267 142 141
+2268 165 144
+2269 146 123
+2270  51 145
+2271  73 143
+2272  12 164
+2273  40 157
+2274  40 162
+2275 142  50
+2276 165 141
+2277 146 133
+2278 133  61
+2279  61 135
+2280  60  56
+2281 135 165
+2282  40  54
+2283  75  40
+2284  40  50
+2285  60 142
+2286  73 171
+2287  40 164
+2288  57 145
+2289  57  40
+2290  40  52
+2291 163  51
+2292 145  40
+2293 156 142
+2294 164 165
+2295 151 146
+2296 156  51
+2297 145  73
+2298 154  12
+2299  12  40
+2301  40 142
+2302 160 165
+2303 162 146
+2304 151 133
+2305 156  61
+2306 164  60
+2307 146 135
+2308  50  40
+2309  42  75
+2310 162  40
+2311 145  60
+2312 141  73
+2313 144  11
+2314  64  11
+2315  63  11
+2316  63  57
+2317 144  57
+2318 151  40
+2320 153 145
+2321  50 156
+2322  45 164
+2323 144 151
+2324  54 156
+2325  40 145
+2326  45 154
+2327 163  12
+2328  56  40
+2329  56  40
+2330  56 160
+2331  51 162
+2332  40 151
+2333  75 156
+2334  40 164
+2335  45 146
+2336 144  50
+2337  40  42
+2338 146 162
+2339 162 145
+2340 157 141
+2341 155 144
+2342  40  64
+2343 104  63
+2344 151  63
+2345 163 144
+2346 153 151
+2347  40 163
+2348  45 153
+2349 163  50
+2350 134  45
+2351 156 144
+2352  42  54
+2353  54  40
+2354  40  45
+2355 141 163
+2356 133  56
+2357  61  56
+2358 135  56
+2359  56  51
+2360 165  40
+2361  54  75
+2363 142  45
+2364 165 144
+2365 146  40
+2366  54 146
+2367  40 162
+2368 162 157
+2369  54 155
+2371 141 104
+2372 133 151
+2373  60 163
+2374 135 153
+2375  56  40
+2376 163  45
+2377  51 163
+2378  73 134
+2379  12 156
+2380  40  42
+2381  40  54
+2382 144  40
+2383 145 141
+2384 154 133
+2385 145  61
+2386 164 135
+2387 145  56
+2388  40 165
+2389 163  54
+2390 151  40
+2391 155 142
+2392 104 165
+2393 151 146
+2394 163  54
+2395 153  40
+2396  73 162
+2397  12  54
+2398 175  40
+2399  12 141
+2400  12 133
+2401 166  60
+2402 157 135
+2403 151  56
+2404 144 163
+2405  40  51
+2406 144  73
+2407 157  12
+2408 121  40
+2409 165  40
+2410 151 144
+2411 164 145
+2412  50 154
+2413 101 145
+2414 162 164
+2415 147 145
+2417  52 163
+2418 141 151
+2419  51 155
+2420  12 104
+2421 173 151
+2422  12 163
+2423  40 153
+2424  40  73
+2425 145  12
+2426 170 175
+2427 151  12
+2428 164  12
+2429  50 166
+2430  60 157
+2431  51 151
+2432  73 144
+2433  12  40
+2434 175 144
+2435  12 157
+2436  12 121
+2437 166 165
+2438 157 151
+2439 151 164
+2440 144  50
+2441  40 101
+2442 144 162
+2443 157 147
+2444 105  40
+2445 143  52
+2446 150  40
+2447 157 141
+2448  50  51
+2449 101  12
+2450 162 173
+2451 147  12
+2453  52  40
+2454 141 145
+2455  51 170
+2456  12 151
+2457 173 164
+2458  12  50
+2459  40  60
+2460  40  51
+2461 160  73
+2462 162  12
+2463 151 175
+2464 156  12
+2465 164  12
+2466 146 166
+2467  50 157
+2468  42 151
+2469  45 144
+2470 163  40
+2471  43 144
+2472  45 157
+2473 144 105
+2474  54 143
+2475  40 150
+2476  45 157
+2477 163  50
+2478  43 101
+2479  45 162
+2480 144 147
+2481  54  40
+2482  40  52
+2483  45  40
+2484 163 141
+2485  43  51
+2486  45  12
+2487 144 173
+2488  54  12
+2490  45  40
+2491 163 160
+2492  43 162
+2493  45 151
+2494 144 156
+2495 134 164
+2496 156 146
+2497  42  50
+2498  54  42
+2499  40  45
+2500 141 163
+2501 133  43
+2502  60  45
+2503 135 144
+2504  56  54
+2505 163  40
+2506  54  45
+2507  40 163
+2508 141  43
+2509 133  45
+2510  60 144
+2511 135  54
+2512  56  40
+2513 165  45
+2514  54 163
+2515  12  43
+2516  40  45
+2517  40 144
+2518  40  54
+2520  40  45
+2521  40 163
+2522  40  43
+2523  40  45
+2524  40 144
+2525 141 134
+2526 133 156
+2527  61  42
+2528 135  54
+2529  56  40
+2530 163 141
+2531  54 133
+2532  40  60
+2533 141 135
+2534 133  56
+2535  61 163
+2536 135  54
+2537  56  40
+2538 165 141
+2539  54 133
+2540  40  60
+2541 141 135
+2542 133  56
+2543  62 165
+2544 135  54
+2545  56  12
+2546 163  11
+2547  54  40
+2548  40 141
+2549 141 133
+2550 133  61
+2551  62 135
+2552 135  56
+2553  56 163
+2554 165  54
+2555  54  40
+2556  40 141
+2557 141 133
+2558 133  61
+2559  63 135
+2560 135  56
+2561  56 165
+2562 163  54
+2563  54  40
+2564  40 141
+2565 141 133
+2566 133  62
+2567  63 135
+2568 135  56
+2569  56 163
+2570 165  54
+2571  51  40
+2572  73 141
+2573  12 133
+2574 175  62
+2575  12 135
+2576  12  56
+2577 166 165
+2578 157  54
+2579 151  40
+2580 144 141
+2581  40 133
+2582 144  63
+2583 157 135
+2584 115  56
+2585 141 163
+2586 153  54
+2587 145  40
+2588 106 141
+2589 126 133
+2590  50  63
+2591 101 135
+2592 162  56
+2593 147 165
+2594  40  51
+2595  52  73
+2596 141  12
+2597  51 175
+2599 173  12
+2600  12 166
+2601  40 157
+2602  40 151
+2603 123 144
+2604 151  40
+2605 155 144
+2606 104 157
+2607 151 115
+2608 163 141
+2610  40 145
+2611  52 106
+2612 163 126
+2613 151  50
+2614 155 101
+2615 104 162
+2616 151 147
+2617 163  40
+2618 153  52
+2620  75 141
+2621  40  51
+2622 155  12
+2623 153 173
+2624 123  12
+2625 151  40
+2626 155  40
+2627 104 123
+2629 163 155
+2630 153 104
+2631  50 151
+2632  50 163
+2633 142 153
+2634 171  40
+2635 164  52
+2636 145  40
+2637  40 163
+2638  52 151
+2639  51 155
+2640 141 104
+2641 133 151
+2642  60 163
+2643 135 153
+2644  56  40
+2645 163  75
+2646  51  40
+2647  73 155
+2648  12 153
+2649  40 123
+2650  40 151
+2651 151 155
+2652 146 104
+2653  40 151
+2654  50 163
+2655 163 153
+2656 151  50
+2657 155  50
+2658 104 142
+2659 151 171
+2660 163 164
+2661 153 145
+2663  75  52
+2664  75  51
+2666  60 141
+2667  51 133
+2668  12  60
+2669  40 135
+2670  40  56
+2671  40 163
+2672  40  51
+2673 162  73
+2674 145  12
+2675 164  40
+2676 165  40
+2677 162 151
+2678 156 146
+2679  73  40
+2680  12  50
+2681  40 163
+2682  40 151
+2683 146 155
+2684 166 104
+2685  40 151
+2686  75 163
+2687  40 153
+2688 163  40
+2689 151  75
+2690 155  75
+2691 104  40
+2692 151  60
+2693 163  51
+2694 153  12
+2695  55  40
+2696  76  40
+2697 155  40
+2698 141  40
+2699 153 162
+2701  63 164
+2702  63 165
+2703 146 162
+2704 166 156
+2705  50  73
+2706  51  12
+2707  73  40
+2708  12  40
+2709  40 146
+2710  40 166
+2711 160  40
+2712 162  75
+2713 151  40
+2714 156 163
+2715 164 151
+2716 146 155
+2717  50 104
+2718  42 151
+2719 155 163
+2720 141 153
+2721 153  55
+2722 145  76
+2723  63 155
+2724  63 141
+2725 146 153
+2726 166 145
+2727  50  63
+2728  51  63
+2729  40 146
+2730  75 166
+2731  40  50
+2732  45  51
+2733 160  73
+2734  54  12
+2736 116  40
+2737 141 160
+2738 155 162
+2739 145 151
+2740  40 156
+2741  75 164
+2742  75 146
+2743  40  50
+2744  45  42
+2745 163 155
+2746  54 141
+2747  40 153
+2748 104 145
+2749 151  63
+2750 163  63
+2751 153 146
+2752  43 166
+2753  40  50
+2754  75  51
+2755  75  40
+2756  40  75
+2757  45  40
+2758 144  45
+2759 134 160
+2760 156  54
+2761  42  40
+2762  54 116
+2763  12 141
+2764  40 155
+2765  40 145
+2767  40  75
+2768  40  75
+2770  40  45
+2771  40 163
+2772  40  54
+2773  50  40
+2774 166 104
+2775 157 151
+2776 151 163
+2777 144 153
+2778  40  43
+2779  52  40
+2780  51  75
+2781 146  75
+2782 166  40
+2783  54  45
+2784  40 144
+2785 141 134
+2786 133 156
+2787  60  42
+2788 135  54
+2789  56  12
+2790 163  11
+2791  54  40
+2792  40  50
+2793 163 166
+2794 151 157
+2795 155 151
+2796 104 144
+2797 151  52
+2798 163  51
+2799 153  40
+2800  55 146
+2801  76 166
+2802 163  54
+2803 151  40
+2804 155 141
+2805 104 133
+2806 151  60
+2807 163 135
+2808 153  56
+2809 116 163
+2810 165  54
+2811 155  40
+2812  51 163
+2813  73 151
+2814  12 155
+2815  12 104
+2816  40 151
+2817  40 163
+2818 151 153
+2819 146  55
+2820  40  76
+2821  50 163
+2822 146 151
+2823 166 155
+2824  51 104
+2825  12 151
+2826  40 163
+2827  40 153
+2828 173 116
+2829  12 165
+2830  40 155
+2831  40  51
+2832  40  73
+2833  40  12
+2834 167  12
+2835 144  40
+2837  75 151
+2838  40 146
+2839 156  40
+2840 145  50
+2841 167 146
+2842  40 166
+2843 104  51
+2844 151  40
+2845 162 173
+2846 145  12
+2847 143  40
+2848 164  40
+2849 157  40
+2850 162  40
+2851 171  40
+2852  50  40
+2853 146 167
+2854 166 144
+2855  54  40
+2856  40  75
+2857  61  40
+2858  54 156
+2859  40 145
+2860  60 167
+2861  51  40
+2862  73 104
+2863  12 151
+2864  40 162
+2865  40 145
+2866  40 143
+2867  40 164
+2868 143 157
+2869 167 162
+2870 144 171
+2871 126  50
+2872 116 146
+2873 111 166
+2874 116  54
+2876  75  61
+2877  40  54
+2878 155  40
+2879 153  60
+2880 126  51
+2881 116  73
+2882 111  12
+2883 116  40
+2884  50  40
+2885 163  40
+2886 151  40
+2887 155  40
+2888 104  40
+2889 151 143
+2890 163 167
+2891 153 144
+2892  55 126
+2893  76 116
+2894 163 111
+2895 151 116
+2896 155  40
+2897 104  75
+2898 151  40
+2899 163 155
+2901 116 126
+2902 165 116
+2903 155 111
+2904  54 116
+2905  40  50
+2906  61 163
+2907  51 151
+2908  73 155
+2909  12 104
+2910  40 151
+2911  40 163
+2912 175 153
+2913  12  55
+2914 175  76
+2915  12 163
+2916  12 151
+2917 166 155
+2918 157 104
+2920 144 163
+2921  40 153
+2922 144 116
+2923 157 165
+2924 103 155
+2925 157  54
+2926 160  40
+2927 171  61
+2928 124  51
+2929 157  73
+2930  50  12
+2931 142  40
+2932 171  40
+2933 164 175
+2934 145  12
+2935  40 175
+2936  52  12
+2937 146  12
+2938 162 166
+2940 155 151
+2941  54 144
+2943 142 144
+2944 171 157
+2945 164 103
+2946 145 157
+2947  40 160
+2948  52 171
+2949 164 124
+2951  51  50
+2952  12 142
+2953 173 171
+2954  12 164
+2955  40 145
+2956  40  52
+2957 165  40
+2958 151 146
+2959 156 162
+2960 164 157
+2961  40 155
+2962 162  54
+2964  75 142
+2965  40 171
+2966 146 164
+2967 166 145
+2968  55  52
+2969  76  40
+2970 167 164
+2971 162 157
+2972 151  51
+2973 164  12
+2974 145 173
+2975  63  12
+2976  63  40
+2977 146  40
+2978 151 165
+2979 154 151
+2980 145 156
+2981  50 164
+2982 164  40
+2983 157 162
+2984  54  40
+2985  40  75
+2986 146  40
+2987 162 146
+2988 157 166
+2989 155  55
+2990  51  76
+2991  73 167
+2992  12 162
+2993  40 151
+2994  40 164
+2995 160 145
+2996 162  63
+2997 151  63
+2998 156 146
+2999 164 151
+3000 146 154
+3001  50 145
+3002  42  50
+3003 167 164
+3004 162 157
+3005 151  54
+3006 164  40
+3007 145 146
+3008  63 162
+3009  63 157
+3010 146 155
+3011 151  51
+3012 154  73
+3013 145  12
+3014  50  40
+3015  45  40
+3016 163 160
+3017  54 162
+3018  40 151
+3019  45 156
+3020 163 164
+3021  51 146
+3022  40  50
+3023  75  42
+3024  75 167
+3025  40 162
+3026  45 151
+3027 144 164
+3028 134 145
+3029 156  63
+3030  42  63
+3031  54 146
+3032  40 151
+3033 164 154
+3034 157 145
+3035  54  50
+3036  40  45
+3037 146 163
+3038 162  54
+3039 157  40
+3040 155  45
+3041  54 163
+3042  40  51
+3043 162  40
+3044  51  75
+3045  73  75
+3046  12  40
+3047 175  45
+3048  12 144
+3049  12 134
+3050 166 156
+3051 157  42
+3052 151  54
+3053 144  40
+3054  40 164
+3055 144 157
+3056 157  54
+3057 103  40
+3058 157 146
+3059 160 162
+3060 171 157
+3061 106 155
+3062 162  54
+3063 157  40
+3064 155 162
+3065  50  51
+3066 142  73
+3067 171  12
+3068 164 175
+3069 145  12
+3070  40  12
+3071  52 166
+3072 146 157
+3073 162 151
+3074 157 144
+3075 155  40
+3076  54 144
+3077  40 157
+3078 142 103
+3079 171 157
+3080 164 160
+3081 145 171
+3082  40 106
+3083  52 162
+3084 164 157
+3085 157 155
+3086  51  50
+3087  12 142
+3088 173 171
+3089  12 164
+3090  40 145
+3091  40  52
+3092 165  40
+3093 151 146
+3094 156 162
+3095 164 157
+3096  40 155
+3097 162  54
+3099  75 142
+3100  40 171
+3101 146 164
+3102 166 145
+3103  55  52
+3104  76  40
+3105 162 164
+3106 145 157
+3107 141  51
+3108 144  12
+3109  63 173
+3110  63  12
+3111 146  40
+3112 151  40
+3113 154 165
+3114 145 151
+3115  50 156
+3117 157  40
+3118  54 162
+3120 146  75
+3121 162  40
+3122 157 146
+3123 155 166
+3124  51  55
+3125  73  76
+3126  12 162
+3127  40 145
+3128  40 141
+3129 160 144
+3130 162  63
+3131 151  63
+3132 156 146
+3133 164 151
+3134 146 154
+3135  50 145
+3136  42  50
+3137 162 164
+3138 145 157
+3139 141  54
+3140 144  40
+3141  63 146
+3142  63 162
+3143 146 157
+3144 151 155
+3145 154  51
+3146 145  73
+3147  50  12
+3148  45  40
+3149 163  40
+3150  54 160
+3151  40 162
+3152  45 151
+3153 163 156
+3154  51 164
+3155  40 146
+3156  75  50
+3157  75  42
+3158  40 162
+3159  45 145
+3160 144 141
+3161 134 144
+3162 156  63
+3163  42  63
+3164  54 146
+3165  40 151
+3166 164 154
+3167 157 145
+3168  54  50
+3169  40  45
+3170 146 163
+3171 162  54
+3172 157  40
+3173 155  45
+3174  54 163
+3175  40  51
+3176 162  40
+3177  51  75
+3178  73  75
+3179  12  40
+3180 175  45
+3181  12 144
+3182  12 134
+3183 166 156
+3184 157  42
+3185 151  54
+3186 144  40
+3187  40 164
+3188 144 157
+3189 157  54
+3190 103  40
+3191 157 146
+3192 160 162
+3193 171 157
+3194  63 155
+3195  63  54
+3196  50  40
+3197 142 162
+3198 171  51
+3199 164  73
+3200 145  12
+3201  40 175
+3202  52  12
+3203 146  12
+3204 162 166
+3206 155 151
+3207  54 144
+3209 142 144
+3210 171 157
+3211 164 103
+3212 145 157
+3213  40 160
+3214  52 171
+3215 164  63
+3216 157  63
+3217  51  50
+3218  12 142
+3219 173 171
+3220  12 164
+3221  40 145
+3222  40  52
+3223 165  40
+3224 151 146
+3225 156 162
+3226 164 157
+3227  40 155
+3228 162  54
+3230  75 142
+3231  40 171
+3232 146 164
+3233 166 145
+3234  55  52
+3235  76  40
+3236 143 164
+3238 160  51
+3239 171  12
+3240  63 173
+3241  63  12
+3242 146  40
+3243 151  40
+3244 154 165
+3245 145 151
+3246  50 156
+3248 157  40
+3249  54 162
+3251 146  75
+3252 162  40
+3253 157 146
+3254 155 166
+3255  51  55
+3256  73  76
+3257  12 143
+3258  40 157
+3259  40 160
+3260 160 171
+3261 162  63
+3262 151  63
+3263 156 146
+3264 164 151
+3265 146 154
+3266  50 145
+3267  42  50
+3268 143 164
+3270 160  54
+3271 171  40
+3272  63 146
+3273  63 162
+3274 146 157
+3275 151 155
+3276 154  51
+3277 145  73
+3278  50  12
+3279  45  40
+3280 163  40
+3281  54 160
+3282  40 162
+3283  45 151
+3284 163 156
+3285  51 164
+3286  40 146
+3287  75  50
+3288  75  42
+3289  40 143
+3290  45 157
+3291 144 160
+3292 134 171
+3293 156  63
+3294  42  63
+3295  54 146
+3296  40 151
+3297 164 154
+3298 157 145
+3299  54  50
+3300  40  45
+3301 146 163
+3302 162  54
+3303 157  40
+3304 155  45
+3305  54 163
+3306  40  51
+3307 162  40
+3308  51  75
+3309  73  75
+3310  12  40
+3311 175  45
+3312  12 144
+3313  12 134
+3314 166 156
+3315 157  42
+3316 151  54
+3317 144  40
+3318  40 164
+3319 144 157
+3320 157  54
+3321 103  40
+3322 157 146
+3323 160 162
+3324 171 157
+3325  50 155
+3326 101  54
+3327 162  40
+3328 147 162
+3329  40  51
+3330  52  73
+3331 141  12
+3332  51 175
+3334 173  12
+3335  12 166
+3336  40 157
+3337  40 151
+3338 142 144
+3339 171  40
+3340 164 144
+3341 145 157
+3342  40 103
+3343  52 157
+3344 164 160
+3345 157 171
+3346  40  50
+3347  75 101
+3348  40 162
+3349  50 147
+3350 142  40
+3351 171  52
+3352 164  40
+3353 145 141
+3354  40  51
+3355  52  12
+3356  51 173
+3357 141  12
+3358 133  40
+3359  60  40
+3360 135 142
+3361  56 171
+3362 163 164
+3363  73 145
+3364  12  52
+3366  40 164
+3367 142 157
+3368 171  40
+3369 164  75
+3370 145  40
+3371  40  50
+3372  52 142
+3373 146 171
+3374 162 164
+3375 157 145
+3376 155  40
+3377  40  52
+3378  75  51
+3380  50 141
+3381 142 133
+3382 171  60
+3383 164 135
+3384 145  56
+3385  40 163
+3386  52  73
+3387  51  12
+3388 141  40
+3389 133  40
+3390  61 142
+3391 135 171
+3392  56 164
+3393 163 145
+3394  73  52
+3395  12  40
+3396  12 146
+3397  40 162
+3398  40 157
+3399 151 155
+3400 146  40
+3401  40  75
+3402  50  40
+3403 141  50
+3404 133 142
+3405  60 171
+3406 135 164
+3407  56 145
+3408 163  40
+3409 133  52
+3410  60  51
+3411 135  40
+3412  40 141
+3413  75 133
+3414  75  61
+3415  40 135
+3416  47  56
+3417 100 163
+3418  47  73
+3419  40  12
+3420  46  12
+3421  46  40
+3423 141 151
+3424 133 146
+3425  61  40
+3426 135  50
+3427  56 141
+3428 163 133
+3429 133  60
+3430  60 135
+3431 135  56
+3432  40 163
+3433  41 133
+3434  75  60
+3435  40 135
+3436  47  40
+3437 100  75
+3438  47  75
+3439  51  40
+3440  12  47
+3441  40 100
+3442  40  47
+3443 173  40
+3444  12  46
+3445  40  46
+3447  40 141
+3448  40 133
+3449 144  61
+3450 157 135
+3451 103  56
+3452 157 163
+3453 160 133
+3454 171  60
+3455 124 135
+3456 157  40
+3457  50  41
+3458 146  75
+3459 162  40
+3460 157  47
+3461 155 100
+3462  54  47
+3463  40  51
+3464  50  40
+3465 164 173
+3466 157  12
+3468  53  40
+3470  61  40
+3471  51 144
+3472  51 157
+3473  73 103
+3474  12 157
+3475  40 160
+3476  40 171
+3477 175 124
+3478  12 157
+3479  40  50
+3480  40 146
+3481 145 162
+3482 154 157
+3483 163 155
+3484 145  54
+3486 151  50
+3487 146 164
+3488  40 157
+3489  50  40
+3490 141  53
+3491 133  40
+3492  60  61
+3493 135  51
+3494  56  51
+3495 163  73
+3496 133  12
+3497  60  40
+3498 135  40
+3499  40 175
+3500  41  12
+3501  75  40
+3503  47 145
+3504 100 154
+3505  47 163
+3506  40 145
+3507  46  40
+3508  46 151
+3509  40 146
+3510 141  40
+3511 133  50
+3512  61 141
+3513 135 133
+3514  56  60
+3515 163 135
+3516 133  56
+3517  60 163
+3518 135 133
+3519  40  60
+3520  75 135
+3521  75  40
+3522  40  41
+3523  47  75
+3524 100  40
+3526  51 100
+3527  12  47
+3529  40  46
+3530 173  46
+3531  12  40
+3532  40 141
+3533  40 133
+3534  40  61
+3535  40 135
+3536 144  56
+3537 157 163
+3538 103 133
+3539 157  60
+3540 160 135
+3541 171  40
+3542 106  75
+3543 162  75
+3544 157  40
+3545 155  47
+3546  50 100
+3547  50  47
+3548 146  51
+3549 162  40
+3550 157 173
+3551 155  12
+3553  53  40
+3555  61  40
+3556  51 144
+3557  54 157
+3558  40 103
+3559 164 157
+3560 157 160
+3561  51 171
+3562  73 106
+3563  12 162
+3564  40 157
+3565  40 155
+3566 175  50
+3567  12  50
+3568  40 146
+3569  40 162
+3570 145 157
+3571 154 155
+3572 163  40
+3573 145  53
+3575 151  61
+3576 146  51
+3577  40  54
+3578  50  40
+3579 141 164
+3580 133 157
+3581  60  51
+3582 135  73
+3583  56  12
+3584 163  40
+3585 133  40
+3586  60 175
+3587 135  12
+3589  41  40
+3590  75 145
+3591  40 154
+3592  47 163
+3593 100 145
+3594  47  40
+3595  40 151
+3596  46 146
+3597  46  40
+3598  40  50
+3601  61  60
+3615  51  40
+3616  12  46
+3617  40  46
+3619 173 141
+3620  12 133
+3621  40  61
+3622  40 135
+3623  40  56
+3624  40 163
+3625 144 133
+3626 157  60
+3627 103 135
+3628 157  40
+3629 160  41
+3630 171  75
+3631  63  40
+3632  63  47
+3633  50 100
+3634 146  47
+3635 162  51
+3636 157  40
+3637 155 173
+3638  54  12
+3640 164  40
+3641 157  40
+3642  51  40
+3643  73 144
+3644  12 157
+3645  40 103
+3646  40 157
+3647 175 160
+3648  12 171
+3649  40  63
+3650  40  63
+3651 145  50
+3652 154 146
+3653 163 162
+3654 145 157
+3655  12 155
+3656  40  54
+3658 173 164
+3659  12 157
+3660  40  51
+3661  40  73
+3662  40  12
+3664 160  40
+3665 165 175
+3666 164  12
+3667 163  40
+3668  50  40
+3669  42 145
+3670 127 154
+3671 162 163
+3672 157 145
+3673 156  40
+3674 147 173
+3675  40  12
+3676 141  40
+3677 162  40
+3678 147  40
+3679 165  40
+3680 155 160
+3681 145 165
+3682 156 164
+3683 164 163
+3684 163  50
+3685  40  42
+3686 164 127
+3687 157 162
+3688  40 157
+3689 143 156
+3690 160 147
+3691  56  40
+3692  42 141
+3693  51 162
+3694  73 147
+3695  12 165
+3696  40 155
+3697  40 145
+3698 175 156
+3699  12 164
+3700 175 163
+3701  12  40
+3702  12 164
+3703 166 157
+3704 157  40
+3705 151 143
+3706 144 160
+3707  40  56
+3708 144  42
+3709 157  51
+3710 114  73
+3711 163  12
+3712 114  40
+3713 157  40
+3714 156 175
+3715 147  12
+3716  50 175
+3717 101  12
+3718 162  12
+3719 147 166
+3720  40 157
+3721  52 151
+3722 141 144
+3723  51  40
+3724  12 144
+3725 173 157
+3726  12 114
+3727  40 163
+3728  40 114
+3729 160 157
+3730 162 156
+3731 151 147
+3732 156  50
+3733 164 101
+3734 146 162
+3735  50 147
+3736  42  40
+3737 134  52
+3738 156  40
+3739 104 141
+3740 151  51
+3741 162  12
+3742 145 173
+3743 143  12
+3744 164  40
+3745 157  40
+3746 162 160
+3747 171 162
+3748  40 151
+3749 154 156
+3750 151 164
+3751 163 146
+3752 164  50
+3753 151  42
+3754 156 134
+3755 147 156
+3756  40 104
+3757 146 151
+3758 157 162
+3759 162 145
+3760  40 143
+3761 144 164
+3762 151 157
+3763 163 162
+3764 153 171
+3766  45 154
+3767 163 151
+3768  54 163
+3769  40 164
+3770 143 151
+3771 167 156
+3772 144 147
+3773 126  40
+3774 116 146
+3775 111 157
+3776 116 162
+3778  75 144
+3779  75 151
+3780  40 163
+3781  60 153
+3782 170  40
+3784  60 163
+3785 154  54
+3786 170  40
+3787  40 143
+3788 142 167
+3789 145 144
+3790 147 126
+3791 151 116
+3792 156 111
+3793 163 116
+3794  72  40
+3795 134  75
+3796 156  75
+3797  42  40
+3798  54  60
+3799  12 170
+3800  40  45
+3801  40  60
+3802  40 154
+3803  40 170
+3805  40 142
+3806  40 145
+3807  40 147
+3808  40 151
+3809 167 156
+3810 144 163
+3811  55  72
+3812  76 134
+3813 146 156
+3814 166  42
+3815  55  54
+3816  76  12
+3817 163  11
+3818 151  40
+3819 155 167
+3820 104 144
+3821 151  55
+3822 163  76
+3823 153 146
+3824  55 166
+3825  76  55
+3826 156  76
+3827 141 163
+3828 155 151
+3829 145 155
+3830  54 104
+3831  40 151
+3832  50 163
+3833 165 153
+3834 154  55
+3835 157  76
+3837 147 141
+3838  51 155
+3839 143 145
+3840 167  54
+3841 144  40
+3842 126  50
+3843 116 165
+3844 111 154
+3845 116 157
+3846  51 156
+3847  73 147
+3848  12  51
+3850  40 143
+3853  55 126
+3854  76 116
+3855 154 111
+3856 163 116
+3857  50  51
+3858  51  73
+3859  73  12
+3861  57  40
+3862  57 167
+3863  40 144
+3864 123  55
+3865 165  76
+3866 163 154
+3867 160 163
+3868 151  50
+3869 143  51
+3870 151  73
+3871 157  40
+3872 165  40
+3873 163  40
+3874  41  40
+3875  12  40
+3878 160  40
+3879 162  40
+3880 151  40
+3881 156  40
+3882 164  40
+3883 146  40
+3884  50  40
+3885  42  40
+3886 104  40
+3887 151  40
+3888 162  40
+3889 145  40
+3890 143  40
+3891 164  40
+3892 157  57
+3893 162  57
+3894 171  40
+3895  40 123
+3896 154 165
+3897 151 163
+3898 163 160
+3899 164 151
+3900 151 143
+3901 156 151
+3902 147 157
+3903  40 165
+3904 145 163
+3905 156  41
+3906 144  12
+3907 163  40
+3908  56  40
+3909 134 160
+3910 156 162
+3911  42 151
+3912  51 156
+3913  73 164
+3914  12 146
+3915 175  50
+3916  12  42
+3917  12 104
+3918 166 151
+3919 157 162
+3920 151 145
+3921 144 143
+3922  40 164
+3923 144 157
+3924 157 162
+3925 122 171
+3926 155  40
+3927  50 154
+3928 101 151
+3929 162 163
+3930 147 164
+3931  40 151
+3932  52 156
+3933 141 147
+3934  51  40
+3935  12 145
+3936 173 156
+3937  12 144
+3938  40 163
+3939  40  56
+3940 165 134
+3941 151 156
+3942 156  42
+3943 164  51
+3944  40  73
+3945 151  12
+3946 156 175
+3947  40  12
+3948  75  12
+3949  40 166
+3950 167 157
+3951 144 151
+3952  55 144
+3953  76  40
+3954 146 144
+3955 166 157
+3956  55 122
+3957  76 155
+3958 144  50
+3959 145 101
+3960 154 162
+3961 145 147
+3962 164  40
+3963 145  52
+3964 106  40
+3965 151 141
+3966 154  51
+3967 145  12
+3968  50 173
+3969  50  12
+3970 142  40
+3971 171  40
+3972 164 165
+3973 145 151
+3974  40 156
+3975  52 164
+3976  51  40
+3977 141 151
+3978 133 156
+3979  60  40
+3980 135  75
+3981  56  40
+3982 163 167
+3983  51 144
+3984  73  55
+3985  12  76
+3986  40 146
+3987  40 166
+3988 160  55
+3989 162  76
+3990 151 144
+3991 156 145
+3992 164 154
+3993 146 145
+3994  50 164
+3995  42 145
+3996 162 106
+3997 155 151
+3998  40 154
+3999  45 145
+4000 163  50
+4001  40  50
+4002 162 142
+4003 145 171
+4005 165 145
+4006 162  40
+4007 156  52
+4008 163  51
+4010  45 141
+4011 144 133
+4012  56  60
+4013 134 135
+4014 156  56
+4015  42 163
+4016  54  51
+4017  40  73
+4018 141  12
+4019 133  40
+4020  60  40
+4021 135 160
+4022  56 162
+4023 163 151
+4024  54 156
+4025  40 164
+4026 151 146
+4027 156  50
+4028  51  42
+4029  73 162
+4030  12 155
+4031 175  40
+4032  12  45
+4033  12 163
+4034 166  40
+4035 157 162
+4036 151 145
+4037 144 164
+4038  40 165
+4039 144 162
+4040 157 156
+4041 111 163
+4042 156  40
+4043 157  45
+4045 145  56
+4046  50 134
+4047 101 156
+4048 162  42
+4049 147  54
+4051  52 141
+4052 141 133
+4053  51  60
+4054  12 135
+4055 173  56
+4056  12 163
+4057  40  54
+4059 165 151
+4060 151 156
+4061 156  51
+4062 164  73
+4063  40  12
+4064 156 175
+4065 151  12
+4066  40  12
+4067  75 166
+4068  40 157
+4069 141 151
+4070 133 144
+4071  60  40
+4072 135 144
+4073  56 157
+4074 165 111
+4075  73 156
+4076  12 157
+4077  12 144
+4078  40 145
+4079  40  50
+4080 167 101
+4081 144 162
+4082  55 147
+4083  76  40
+4084 146  52
+4085 166  40
+4086  55 141
+4087  76  51
+4088 151  12
+4089 156 173
+4090 157  12
+4091 144  40
+4092 145  40
+4093 163 165
+4094  56 151
+4095 163 156
+4096 150 164
+4097 157  40
+4098 167 156
+4099  50 151
+4100 156  40
+4101 151  75
+4102  51  40
+4103  73 141
+4104  12 133
+4105 175  60
+4106  12 135
+4107  12  56
+4108 166 165
+4109 157  73
+4110 151  12
+4111 144  12
+4113 144  40
+4114 157 167
+4115 115 144
+4116 153  55
+4117 104  76
+4118 151 146
+4119 162 166
+4120  50  55
+4121 101  76
+4122 162 151
+4123 147 156
+4124  40 157
+4125  52 144
+4126 141 145
+4127  51 163
+4128  12  56
+4129 173 163
+4130  12 150
+4131  40 157
+4132  40 167
+4133 124  50
+4134 117 156
+4135 104 151
+4136 117  51
+4137  50  73
+4138  42  12
+4139 144 175
+4140 157  12
+4141 115  12
+4142 153 166
+4143 104 157
+4145 162 144
+4146  42  40
+4147  51 144
+4148  73 157
+4149  12 115
+4150 175 153
+4151  12 104
+4152  12 151
+4153 166 162
+4154 157  50
+4155 151 101
+4156 144 162
+4157  40 147
+4158 144  40
+4159 157  52
+4160 103  40
+4161 150 141
+4162 104  51
+4163 151  12
+4164 162 173
+4165  50  12
+4166 101  40
+4167 162  40
+4168 147 124
+4169  40 117
+4170  52 104
+4171 141 117
+4172  51  50
+4173  12  42
+4174 173 144
+4175  12 157
+4176  40 115
+4177  40 153
+4178 124 104
+4179 117 151
+4180 104 162
+4181 117  42
+4182  50  51
+4183  42  73
+4184 144  12
+4185 157 175
+4186 103  12
+4187 150  12
+4188 104 166
+4189 151 157
+4190 162 151
+4191  42 144
+4192  51  40
+4193  73 144
+4194  12 157
+4195 175 103
+4196  12 150
+4197  12 104
+4198 166 151
+4199 157 162
+4200 151  50
+4201 144 101
+4202  40 162
+4203 144 147
+4204 157  40
+4205 120  52
+4206 167  40
+4207 144 141
+4208  50  51
+4209 101  12
+4210 162 173
+4211 147  12
+4213  52  40
+4214 141 124
+4215  51 117
+4216  12 104
+4217 173 117
+4218  12  50
+4219  40  42
+4220  40 144
+4221 124 157
+4222 117 103
+4223 104 150
+4224 117 104
+4225  50 151
+4226  42 162
+4227 144  42
+4228 157  51
+4229 120  73
+4230 167  12
+4231 144 175
+4232  42  12
+4233  51  12
+4234  73 166
+4235  12 157
+4236 175 151
+4237  12 144
+4238  12  40
+4239 166 144
+4241 151 120
+4242 144 167
+4243  40 144
+4244 144  50
+4245 157 101
+4246 115 162
+4247 166 147
+4248  50  40
+4249 101  52
+4250 162  40
+4251 147 141
+4252  40  51
+4253  52  12
+4254 141 173
+4255  51  12
+4256  12  40
+4257 173  40
+4258  12 124
+4259  40 117
+4260  40 104
+4261 124 117
+4262 117  50
+4263 104  42
+4264 117 144
+4265  50 157
+4266  42 120
+4267 144 167
+4268 157 144
+4269 115  42
+4270 166  51
+4271  42  73
+4272  51  12
+4273  73  40
+4274  12  40
+4275 175 165
+4276  12 151
+4277  12 156
+4278 166 164
+4279 157  40
+4280 151 160
+4281 144 141
+4282  40 162
+4283 144 145
+4284 157 156
+4285 115 164
+4286 157 137
+4287 165 151
+4289 164 165
+4290 104 155
+4291 106 142
+4292  50 145
+4293 101 162
+4294 162  40
+4295 147  75
+4297  52 167
+4298 141 144
+4299  51  55
+4300  40  76
+4301  57 151
+4302  57 116
+4303  40 165
+4304 141 155
+4305 162 142
+4306 147 145
+4307  40 162
+4308 141 117
+4309  40 146
+4310 151  50
+4311 147  50
+4312 156 142
+4313 157 171
+4314 162 164
+4316 144  40
+4317  12  52
+4318 173  51
+4319  12  42
+4320  40  56
+4321  40  56
+4322 124  42
+4323 117  51
+4324 104  73
+4325 117  12
+4326  50  40
+4327  42  40
+4328 144 160
+4329 157 141
+4330 115 162
+4331 157 145
+4332 165 156
+4333 156 164
+4334 164 137
+4335 104 144
+4336 106 151
+4337  42 162
+4338  51 145
+4339  73 143
+4340  12 164
+4341 175 157
+4342  12 162
+4343  12 171
+4344 166  55
+4345 157  76
+4346 151 156
+4347 144 141
+4348  40 155
+4349 144 145
+4350 157 117
+4351 115 146
+4352 157  50
+4353 165 144
+4354 156 151
+4355 164 162
+4356 125 145
+4357 123 143
+4358  50 164
+4359 101 157
+4361 147 171
+4362  40  55
+4363  52  76
+4364 141 156
+4365  51 111
+4366  12 156
+4367 173 157
+4368  12 144
+4369  40 145
+4370  40  51
+4371 124  73
+4372 117  12
+4373 104 175
+4374 117  12
+4375  50  12
+4376  42 166
+4377 144 157
+4378 157 151
+4379 115 144
+4380 157  40
+4381 165 144
+4382 156 157
+4383 164 115
+4384 125 166
+4385 123  50
+4386  42 101
+4387  51 162
+4388  73 147
+4389  12  40
+4390 175  52
+4391  12  40
+4392  12 141
+4393 166  51
+4394 157  12
+4395 151 173
+4396 144  12
+4398 144  40
+4399 157 124
+4400 125 117
+4401 155 104
+4402 157 117
+4403 165  50
+4404 156  42
+4405 164 144
+4406  50 157
+4407 101 115
+4408 162 166
+4409 147  42
+4410  40  51
+4411  52  73
+4412 141  12
+4413  51 175
+4415 173  12
+4416  12 166
+4417  40 157
+4418  40 151
+4419 124 144
+4420 117  40
+4421 104 144
+4422 117 157
+4423  50 115
+4424  42 157
+4425 144 165
+4426 157 156
+4427 125 164
+4428 155 104
+4429 157 106
+4430 165  50
+4431 156 101
+4432 164 162
+4433  42 147
+4434  51  40
+4435  73  52
+4436  12  40
+4437 175 141
+4438  12  51
+4439  12  11
+4440  57  11
+4441  52  57
+4442  40  57
+4443 124  40
+4444 150 141
+4445 145 162
+4446  40 147
+4447 146  40
+4448 157 141
+4449 154  40
+4450 154 151
+4451 157 147
+4452 167 156
+4453 151 157
+4454 156 162
+4455 147 145
+4456  40 144
+4457 144  12
+4458 145 173
+4459 163  12
+4460 143  40
+4461 162  40
+4462 151 124
+4463 142 117
+4464 145 104
+4465 163 117
+4466  40  50
+4467 157  42
+4468 156 144
+4469 145 157
+4470  40 115
+4471 145 157
+4472 156 165
+4473 164 156
+4474 162 164
+4475 171 104
+4476  40 106
+4477 151  42
+4478 156  51
+4479  40  73
+4480 157  12
+4481 165 175
+4482 162  12
+4483  40  12
+4484 164 166
+4485 141 157
+4486 142 151
+4487 154 144
+4488 145  40
+4489  40 144
+4491 146 115
+4492  40 157
+4493 143 165
+4494 157 156
+4495 155 164
+4496 155 125
+4497 141 123
+4498 156  50
+4499 144 101
+4500 163 162
+4501  56 147
+4503  40  52
+4504 106  40
+4505 157 141
+4506 162  51
+4508  40 173
+4509  52  12
+4511 145  40
+4512 141 124
+4513 143 117
+4514 150 104
+4515  40 117
+4516 143  50
+4517 155  42
+4518 155 144
+4519 144 157
+4520 116 115
+4521 141 157
+4522 155 165
+4523 145 156
+4524  40 164
+4525  50 125
+4526 141 123
+4527  40  42
+4528 156  51
+4529 165  73
+4530 154  12
+4531 154 175
+4532  40  12
+4533 164  12
+4534 145 166
+4535 162 157
+4536 155 151
+4537 151 144
+4538 156  40
+4539 141 144
+4540 164 157
+4541 145 125
+4542 144 155
+4543  40 157
+4544 163 165
+4545 164 156
+4546 162 164
+4547 151  50
+4548 156 101
+4549 147 162
+4550  51 147
+4551  54  40
+4552  40  52
+4553 167  40
+4554 145 141
+4555  40  51
+4556 163  12
+4557 160 173
+4558 145  12
+4559 143  40
+4560 151  40
+4561 146 124
+4562 171 117
+4563  40 104
+4564 164 117
+4565 150  50
+4566 145  42
+4567  40 144
+4568 141 157
+4569 162 125
+4570 147 155
+4571 165 157
+4572 155 165
+4573 145 156
+4574 156 164
+4575 164  42
+4576 163  51
+4577  12  73
+4578  40  12
+4579  52 175
+4580  40  12
+4581 151  12
+4582 164  57
+4583  40  52
+4584 162  40
+4585 145 124
+4586 161 150
+4587 165 145
+4588 151  40
+4589 162 146
+4590 145 157
+4591 163 154
+4592  40 154
+4593 142 157
+4594 171 167
+4595  40 151
+4596 141 156
+4597  40 147
+4598 163  40
+4599 145 144
+4600 161 145
+4601 165 163
+4602 145 143
+4603 156 162
+4604 143 151
+4605 145 142
+4606  40 145
+4607 157 163
+4608 146  40
+4609  40 157
+4610 154 156
+4612 164  40
+4613 164 145
+4614 145 156
+4615 162 164
+4616 163 162
+4617  56 171
+4619  40 151
+4620 124 156
+4621 150  40
+4622 145 157
+4623  40 165
+4624 154 162
+4625 145  40
+4627 164 141
+4628 145 142
+4629 162 154
+4630  40 145
+4631 163  40
+4632  40 157
+4633 163 146
+4634 164  40
+4635 141 143
+4636 156 157
+4637 144 155
+4638 163 155
+4639  40 141
+4640 146 156
+4641 157 144
+4642 162 163
+4643  12  56
+4645  52  40
+4646  40 106
+4647  42 157
+4648 164 162
+4649 150  12
+4650 141  40
+4651 164  52
+4653 141 145
+4654 162 141
+4655 147 143
+4656 165 150
+4657 155  40
+4658 145 143
+4659 156 155
+4660 164 155
+4661  40 144
+4662 163 116
+4663 150 141
+4664 157 155
+4665 165 145
+4666 154  40
+4667 144  50
+4668  40 141
+4669 142  40
+4670 145 156
+4671  40 165
+4672 141 154
+4673  40 154
+4674 163  40
+4676 162 145
+4677 151 162
+4678 156 155
+4679 147 151
+4680  42 156
+4681  54 141
+4682  40 164
+4683 164 145
+4684 150 144
+4685 145  40
+4686  40 163
+4687 154 164
+4688 145 162
+4689 164 151
+4690 164 156
+4691 145 147
+4692 162  51
+4693  40  54
+4694 165  40
+4695  40 167
+4696 163 145
+4697 164  40
+4698 141 163
+4699 156 160
+4700 144 145
+4701 163 143
+4702  40 151
+4704 157 171
+4705 162  40
+4706  40 164
+4707  42 150
+4708 164 145
+4709 150  40
+4711 164 162
+4712  12 147
+4713  40 165
+4714  52 155
+4715  40 145
+4716 141 156
+4717 162 164
+4718 147 163
+4719 165  12
+4720 155  40
+4721 145  52
+4722 156  40
+4723 164 151
+4724  40 164
+4725 163  40
+4726 150 162
+4727 157 145
+4728 165 161
+4729 154 165
+4730 144 151
+4731  40 162
+4732 142 145
+4733 145 163
+4735 141 142
+4736 156 171
+4738 165 141
+4739 156  40
+4741 151 145
+4742 147 161
+4743 156 165
+4745 144 156
+4746  40 143
+4747 151 145
+4748 156  40
+4749 164 157
+4750  56 146
+4751  42  40
+4752  40 154
+4753  40 145
+4754 124 164
+4755 150 164
+4757  40 162
+4758 144 163
+4759 141  56
+4760 164  40
+4761 141  40
+4762  40 124
+4763 155 150
+4765 155  40
+4766 142 154
+4768 162 164
+4769  40 164
+4770  50 145
+4771 146 162
+4772 165  40
+4773 156 163
+4774 143  40
+4775  51 163
+4776  40 164
+4777 151 141
+4778 163 156
+4779  40 144
+4780 141 163
+4781  12  40
+4782  40 146
+4783  52 157
+4784  40 162
+4785 160  12
+4786 157  40
+4787 151  52
+4788 156  40
+4789 164  42
+4790 145 164
+4791 162 150
+4792  40 141
+4794 157  40
+4795  40 141
+4796 164 162
+4797 150 147
+4798 145 165
+4799  40 155
+4800 146 145
+4801 165 156
+4802 156 164
+4803 143  40
+4804 164 163
+4805 151 150
+4807 156 165
+4808  40 154
+4809 151 144
+4810 156  40
+4811  40 142
+4812 157 145
+4813 165  40
+4814 162 141
+4816 143 163
+4817 157 164
+4818 144 162
+4819 145 151
+4820  40 156
+4821 164 147
+4822 150  42
+4823 141  54
+4824 164  40
+4825  40 164
+4826 151 150
+4827 155 145
+4828 160  40
+4831 155 164
+4832 145 164
+4833 156 145
+4834 164 162
+4835 163  40
+4836  40 165
+4837 164  40
+4838 150 163
+4839 141 164
+4840 164 141
+4841  40 156
+4842 143 144
+4843 157 163
+4844 155  40
+4845 155 146
+4846 141 157
+4847 156 162
+4848 144  40
+4849  56  42
+4850  12 164
+4851  40 150
+4852  52 141
+4853  40 164
+4854 147  12
+4855 154  40
+4856 157  52
+4857 142  40
+4859 154 162
+4860 163 147
+4861 116 165
+4862 145 155
+4864 144 156
+4865 145 164
+4866 144  40
+4867  40 163
+4868 151 150
+4869 144 157
+4870 145 165
+4871 156 154
+4872 164 144
+4873 151  40
+4874 146 142
+4875 151 145
+4876 145  40
+4877 163 141
+4878  40 156
+4879 167  40
+4880 150 165
+4881 145 156
+4882 164 163
+4883 150 151
+4884 145 147
+4885 162 156
+4886  40 145
+4887 167 144
+4888 145  40
+4889  40 151
+4891 145 164
+4892 145  56
+4893 144  42
+4895 141  40
+4896  40 124
+4897 166 150
+4898 157 145
+4899 154  40
+4900 165 144
+4901 155 141
+4902 145 164
+4903  40 141
+4904  50  40
+4905  42 155
+4906 166 145
+4907  42 155
+4908  51 142
+4909  54 145
+4910  40 162
+4911 141  40
+4912  40  50
+4913 163 146
+4914 151 165
+4915 155 156
+4916 144 143
+4917 151  51
+4918 163  40
+4919 153 151
+4920  12 163
+4922  52 141
+4923  40  12
+4924  50  40
+4925  42  52
+4926 144  40
+4927  42 160
+4928  51 157
+4929  54 151
+4930  40 156
+4931 157 164
+4932 162 145
+4933  40 162
+4934 141  40
+4935  40 164
+4936 155 157
+4937 157  40
+4938 165 164
+4939 156 150
+4940 164 145
+4942 164 146
+4943 141 165
+4944 142 156
+4945 154 143
+4946 145 164
+4947  40 151
+4948  50 157
+4949  42 156
+4950 155  40
+4951  42 151
+4952  51 156
+4953  56  40
+4954  40 157
+4955  40 165
+4956 123 162
+4957 145  40
+4958 145 143
+4959  40 157
+4960 151 144
+4961 156 145
+4962 166  40
+4963 157 164
+4964 153 150
+4965 145 141
+4966 103 164
+4967 155  40
+4968 144 151
+4969  50 155
+4970  51 160
+4971  40 154
+4972 142 145
+4973 145 155
+4974 154 145
+4975 157 156
+4976 167 164
+4977  40 163
+4978 146  40
+4979 157 164
+4980 162 150
+4981  40 141
+4982 145 164
+4983 170  40
+4984 141 143
+4985 143 157
+4986 164 155
+4987  12 155
+4988  40 141
+4989  52 156
+4990  40 144
+4991 144  56
+4992 145  12
+4993 164  40
+4994 141  52
+4995 151  40
+4996 154 147
+4997 163 154
+4998  40 157
+4999 157 142
+5000 146 141
+5001  40 154
+5002 150 163
+5003 157 116
+5004 167 145
+5005  40 145
+5006 141 144
+5007 154 145
+5008 154 144
+5010 164 151
+5011 150 144
+5013 163 156
+5014 145 164
+5015  40 151
+5017 154 151
+5018 141 145
+5019 147 163
+5020 163  40
+5021  40 167
+5022 141 150
+5023 162 145
+5024 145 164
+5025  40 150
+5026 151 145
+5027 156 162
+5028 164  40
+5029 145 167
+5030 162 145
+5031 160  40
+5032 162 156
+5034 164 145
+5035 145 144
+5036 144  40
+5037  56 141
+5038  12  40
+5039  40 166
+5040  52 157
+5041  57 154
+5042  12 165
+5043  12 155
+5044 143 145
+5045 154  40
+5046 141  50
+5047 163  42
+5048 163 166
+5049  40  42
+5050 103  51
+5051 155  54
+5052 144  40
+5053 124 141
+5054 141  40
+5055 142 163
+5056 154 151
+5057 145 155
+5058  12 144
+5059 173 151
+5060  12 163
+5061 160 153
+5062 165  12
+5063 142  40
+5064 154  52
+5065 151  40
+5066 143  50
+5067  72  42
+5068  12 144
+5069  40  42
+5070  40  51
+5071 143  54
+5072 150  40
+5073 141 157
+5076  52 141
+5077 143  40
+5079 144 157
+5080 116 165
+5081 141 156
+5082 155 164
+5083 145  40
+5084  73 164
+5085  12 141
+5086  40 142
+5087  40 154
+5088 143 145
+5089 150  40
+5090 141  50
+5091 162  42
+5092  40 155
+5093  52  42
+5094 141  51
+5095 162  56
+5096 147  40
+5097 163  40
+5098 122 123
+5100 161 145
+5101 165  40
+5103 162 156
+5104 145 166
+5105 144 157
+5106  73 153
+5107  12 145
+5108  40 103
+5109  40 155
+5110 143 144
+5111 150  50
+5112 141  51
+5113 162  40
+5114  40 142
+5115  52 145
+5116 147 154
+5117 154 157
+5118 157 167
+5119 142  40
+5120 141 146
+5121 154 157
+5122 163 162
+5123 116  40
+5125 145 170
+5126 144 141
+5127 145 143
+5128 144 164
+5129  73  12
+5131  57  52
+5132  57  40
+5133  40 144
+5134 156 145
+5135 145 164
+5136 145 141
+5137 144 151
+5138  40 154
+5139 144 163
+5140  75  40
+5141  75 157
+5142 163 146
+5143 151  40
+5144 155 150
+5145 104 157
+5146 151 167
+5147 163  40
+5148 153 141
+5149  54 154
+5150  40 154
+5151 166  40
+5152  75 164
+5153  75 150
+5154 143 145
+5155 146 163
+5156 166 145
+5157  54  40
+5158  40 146
+5159 155 154
+5160  75 141
+5161 155 147
+5162 164 163
+5163 141  40
+5164 142 141
+5165  12 162
+5166  40 145
+5168 166 151
+5169 157 156
+5170 151 164
+5171 144 145
+5172  40 162
+5173  50 160
+5174  52 162
+5175 146 145
+5176 165 164
+5177 156 145
+5178 143 144
+5179  51  56
+5180  50  12
+5181 101  40
+5182 162  52
+5183 147  57
+5184  40  12
+5185  52  12
+5186 141 143
+5187  51 154
+5188  73 141
+5189  12 163
+5190 175 163
+5192 143 103
+5200 133  40
+5201 135 173
+5202  40  12
+5203  75 160
+5204  40 165
+5205 173 142
+5206  12 154
+5207  40 151
+5208  40 143
+5209  40  72
+5210  40  12
+5211 173  40
+5212  42  40
+5214 144 150
+5215  42 141
+5216  54 162
+5218  42  52
+5219 163 143
+5220  42 155
+5221  54 144
+5222  40 116
+5223  42 141
+5224 166 155
+5225  42 145
+5226  54  73
+5227  40  12
+5228 144  40
+5229 157  40
+5230 103 143
+5232 104 141
+5233 151 162
+5234 162  40
+5235 175  52
+5236  54 141
+5237  12 162
+5238  40 147
+5239  40 163
+5240  40 122
+5241  40 145
+5242 173 161
+5243  42 165
+5244 143 151
+5245 160 162
+5246  42 145
+5247  54 144
+5248  40  73
+5249  42  12
+5250 163  40
+5251 163  40
+5252  42 143
+5253  54 150
+5254  40 141
+5255  42 162
+5256 166  40
+5257  42  52
+5258  54 147
+5259  40 154
+5260 144 157
+5261 157 142
+5262 103 141
+5263 157 154
+5264 160 163
+5265 171 116
+5266 175 145
+5267  54 145
+5268  12 144
+5269  40 145
+5270  40 144
+5271  40  73
+5272  40  11
+5273 173  11
+5274  42  57
+5275 145  57
+5276 143  40
+5277 150 156
+5278 157 145
+5279  42 145
+5280  54 144
+5282  42 144
+5283 163  75
+5284 163  75
+5286 163 151
+5287  42 155
+5288  54 104
+5289  40 151
+5290  42 163
+5291  42 153
+5294 144 166
+5295 157  75
+5296 105  75
+5298 150 146
+5299 157 166
+5300 175  54
+5301  54  40
+5302  12 155
+5303  40  75
+5304  40 155
+5305  40 164
+5306  40 141
+5307 173 142
+5308  42  12
+5309 151  40
+5310 156  40
+5311 157 166
+5312 144 157
+5313 145 151
+5314  42 144
+5315  54  40
+5316  40  50
+5317  42  52
+5318 165 146
+5319  42 165
+5320  54 156
+5321  40 143
+5322  42  51
+5323 166  40
+5324  42  50
+5325  54 101
+5326  40 162
+5327 144 147
+5328 157  40
+5329 111  52
+5330 156  40
+5331 157 141
+5332 144  51
+5333 145  73
+5334 175  12
+5335  54 175
+5336  12  40
+5337  40 143
+5338  40 155
+5339  40 144
+5340  40 124
+5341 173 141
+5342  42 142
+5344 163 145
+5345  42 133
+5346  54 135
+5348  42  75
+5349  42  40
+5350  54 173
+5351  40  12
+5352  42  40
+5353 166  40
+5354  42 173
+5355  54  42
+5356  40 143
+5358 157  42
+5359 114  54
+5360 163  40
+5361 114  42
+5362 157 163
+5363 156  42
+5364 147  54
+5365 175  40
+5366  54  42
+5367  12 166
+5368  40  42
+5369  40  54
+5371  40 144
+5372 173 157
+5373  42 103
+5374 154 150
+5375 163 104
+5376 154 151
+5377 157 162
+5378 156 175
+5379 147  54
+5380  42  12
+5381  54  40
+5383  42 173
+5385  54 143
+5386  40 160
+5388 166  54
+5389  42  40
+5390  54  42
+5391  40 163
+5392 144 163
+5393 157  42
+5394 114  54
+5395 163  40
+5396 114  42
+5397 157 166
+5398 156  42
+5399 147  54
+5400 175  40
+5401  54 144
+5402  12 157
+5403  40 103
+5404  40 157
+5405  40 160
+5406  40 171
+5407 173 175
+5408  42  54
+5409 155  12
+5410 153  40
+5411 144  40
+5412 151 173
+5413 162  42
+5414  42 145
+5415  54 143
+5416  40 150
+5417  42 157
+5418 163  42
+5419  42  54
+5420  54  40
+5421  40  42
+5422  42 163
+5423 166 163
+5424  42 163
+5425  54 163
+5426  40  42
+5427 144  54
+5428 157  40
+5429 115  42
+5430 153  42
+5431 104  54
+5432 151  40
+5433 162 144
+5434 175 157
+5435  54 105
+5436  12 143
+5437  40 150
+5438  40 157
+5439  40 175
+5440  40  54
+5441 173  12
+5442  42  40
+5443 155  40
+5444 153 173
+5445 144  42
+5447 163 156
+5448 153 157
+5449  42 144
+5450  54 145
+5451  40  42
+5452  42  54
+5453 163  40
+5455  54 165
+5456  40  42
+5457  42  54
+5458  42  40
+5459  54  42
+5460  40 166
+5461 144  42
+5462 157  54
+5463 115  40
+5464 141 144
+5465 153 157
+5466 145 111
+5467 104 156
+5468 151 157
+5469 163 144
+5470 153 145
+5476  40 173
+5477  40  42
+5478 173 154
+5479  42 163
+5480 155  42
+5481 153  54
+5482 146  40
+5483 163  42
+5488 163 166
+5492  42 144
+5493  42 157
+5494  54 114
+5495  40 163
+5496 144 114
+5498 115 156
+5499 141 147
+5500 153 175
+5501 145  54
+5502 106  12
+5503 126  40
+5504 175  40
+5505  54 173
+5506  12  42
+5507  40 154
+5508  40 163
+5509  40 154
+5510  40 157
+5511 173 156
+5512  42 147
+5513 155  42
+5514 157  54
+5515 165  40
+5516 156  42
+5517 164  42
+5518  42  54
+5519  54  40
+5520  40  42
+5521  42 166
+5522 165  42
+5523 163  54
+5524  42  40
+5525  54 144
+5526  40 157
+5527  42 114
+5528  42 163
+5529  54 114
+5530  40 157
+5531 144 156
+5532 157 147
+5533 115 175
+5534 157  54
+5535 165  12
+5536 156  40
+5537 164  40
+5538 125 173
+5539 123  42
+5540 175 155
+5541  54 153
+5542  12 144
+5543  40 151
+5544  40 162
+5545  40  42
+5546  40  54
+5547 173  40
+5549 155 163
+5550 157  42
+5551 165  54
+5552 156  40
+5553 164  42
+5554  42 166
+5555  54  42
+5556  40  54
+5557  42  40
+5558  42 144
+5559  54 157
+5560  40 115
+5561  42 153
+5562  42 104
+5563  54 151
+5564  40 162
+5565 144 175
+5566 157  54
+5567 115  12
+5568 157  40
+5569 165  40
+5570 156 173
+5571 164  42
+5572 104 155
+5573 106 153
+5574 175 144
+5575  54 151
+5576  12 163
+5577  40 153
+5578  40  42
+5579  40  54
+5581 173  42
+5582  42 163
+5583 155  42
+5584 166  54
+5585  42  40
+5586  54  42
+5587  40  42
+5588  42  54
+5589 163  40
+5590 163 144
+5591  42 157
+5592  54 115
+5593  40 141
+5594  42 153
+5595 166 145
+5596  42 104
+5597  54 151
+5598  40 163
+5599 144 153
+5600 157 175
+5601 115  54
+5602 166  12
+5603 175  40
+5604  54  40
+5605  12 173
+5606  40  42
+5607  40 155
+5608  40 153
+5609  40 146
+5610 173 163
+5612 162  54
+5613 144  40
+5614 144  42
+5615 151 163
+5616 163  42
+5617 153  54
+5618  42  40
+5619  54  42
+5620  40  42
+5621  42  54
+5622 163  40
+5623 165 144
+5624  42 157
+5625  54 115
+5626  40 141
+5627  42 153
+5628  42 145
+5629  54 106
+5630  40 126
+5631 144 175
+5632 157  54
+5633 122  12
+5634 145  40
+5635 141  40
+5636 144 173
+5637 104  42
+5638 151 155
+5639 163 157
+5640 153 165
+5641 175 156
+5642  54 164
+5643  12  42
+5644  40  54
+5646  40  42
+5647  40 165
+5648 173 163
+5650 162  54
+5651 155  42
+5652 144  42
+5653 151  54
+5654 162  40
+5655  42 144
+5656  54 157
+5657  40 115
+5658  42 157
+5659 163 165
+5660  42 156
+5661  54 164
+5662  40 125
+5663  42 123
+5664 166 175
+5665  42  54
+5666  54  12
+5668 144  40
+5669 157 173
+5670 122  42
+5672 175 157
+5673  54 165
+5674  12 156
+5675  40 164
+5676  40  42
+5677  40  54
+5679 173  42
+5681 162  54
+5682 155  40
+5684  54  42
+5685  40  54
+5686  42  40
+5687 163 144
+5688  42 157
+5689  54 115
+5690  40 157
+5691  42 165
+5692 166 156
+5693  42 164
+5694  54 104
+5695  40 106
+5696 144 175
+5697 157  54
+5698 122  12
+5699 155  40
+5700 175  40
+5701  54 173
+5702  12  42
+5703  40 155
+5704  40 166
+5705  40  42
+5706  40  54
+5707 173  40
+5709 160 163
+5710 167 163
+5711 144  42
+5712  42  54
+5713  54  40
+5714  40  42
+5715  42 166
+5719  42 144
+5720 166 157
+5721  42 115
+5722  54 166
+5723  40 175
+5724 144  54
+5725 157  12
+5726 120  40
+5727 167  40
+5728 144 173
+5729 175  42
+5730  54 162
+5731  12 144
+5732  40 144
+5733  40 151
+5734  40 163
+5735  40 153
+5736 173  42
+5737  42  54
+5738 161  40
+5740  54 163
+5741  40 165
+5743  42  54
+5744  54  40
+5745  40  42
+5747  42  54
+5748  54  40
+5749  40 144
+5750 144 157
+5751 157 122
+5752 121 145
+5753 165 141
+5754 151 144
+5755 164 104
+5756 175 151
+5757  54 163
+5758  12 153
+5759  40 175
+5760  40  54
+5761  40  12
+5763 173  40
+5764  42 173
+5765 161  42
+5766 165 162
+5767 151 155
+5768 164 144
+5769  42 151
+5770  54 162
+5771  40  42
+5772  42  54
+5773  42  40
+5774  54  42
+5775  40 163
+5777  42  54
+5778  54  40
+5779  40  42
+5780 144 166
+5781 157  42
+5782 121  54
+5783 165  40
+5784 151 144
+5785 164 157
+5786 175 122
+5787  54 155
+5788  12 175
+5789  40  54
+5790  40  12
+5795 165 162
+5797 157  42
+5798 165  54
+5799 156  40
+5800 164  42
+5801  42 163
+5802  54  42
+5803  40  54
+5804  42  40
+5805 165  42
+5806  42 166
+5807  54  42
+5808  40  54
+5809  42  40
+5810 155 144
+5811  42 157
+5812  54 122
+5813  40 155
+5814 144 175
+5815 157  54
+5816 125  12
+5817 155  40
+5818 157  40
+5819 165 173
+5820 156  42
+5821 164 160
+5822 175 167
+5823  54 144
+5824  12  42
+5825  40  54
+5827  40  42
+5828  40  42
+5829 173  54
+5830  42  40
+5831 167  42
+5832 162 166
+5833 144  42
+5834 151  54
+5835 163  40
+5836 153 144
+5837  42 157
+5838  54 120
+5839  40 167
+5840  42 144
+5841 163 175
+5842 165  54
+5843 163  12
+5844  42  40
+5845  54  40
+5846  40 173
+5848  42 161
+5849  54  42
+5850  40  54
+5851 144  40
+5852 157  42
+5853 127  42
+5854 162  54
+5855 151  40
+5856 164  42
+5857 145  42
+5858 104  54
+5859 151  40
+5860 163 144
+5861 153 157
+5862 175 121
+5863 175 165
+5864  73 151
+5865  12 164
+5866  12 175
+5867 165  54
+5868 151  12
+5869 156  40
+5870 164  40
+5871  40 173
+5872 156  42
+5873 143 161
+5874 155 165
+5875 144 151
+5876 163 164
+5877  40  42
+5878  75  54
+5880 163  42
+5881 151  42
+5882 172  54
+5883 145  40
+5884 157  42
+5885 146  42
+5886  50  54
+5887 143  40
+5888 155 144
+5889 144 157
+5890 124 121
+5891 141 165
+5892 142 151
+5893 154 164
+5894 145 175
+5895  51  54
+5896  40  12
+5897  57  40
+5899 163 173
+5900 151  42
+5901 172 165
+5902 145 155
+5904 146 165
+5905  50 156
+5906 103 164
+5907 155  42
+5908 144  54
+5909 124  40
+5910 141  42
+5911 142 165
+5912 154  42
+5913 145  54
+5914  51  40
+5915  73  42
+5916  12 155
+5917  12  42
+5918 166  54
+5919 157  40
+5920 151 144
+5921 144 157
+5922  40 125
+5923 165 155
+5924 163 157
+5925 141 165
+5926 147 156
+5927 145 164
+5928  50 175
+5929  51  54
+5931 173  40
+5932  12  40
+5933  40 173
+5934  40  42
+5935 160 167
+5937 151 144
+5938 156 151
+5939 164 163
+5940 146 153
+5941  50  42
+5942  42  54
+5943 124  40
+5944 150  42
+5945 145 163
+5946  40 165
+5948 150  42
+5949 145  54
+5950 154  40
+5951 154  42
+5952  40  42
+5953 150  54
+5954 141  40
+5955 163 144
+5956  40 157
+5957 157 127
+5958 156 162
+5959 154 151
+5960 171 164
+5961  40 145
+5962 164 104
+5963 150 151
+5964 145 163
+5965  40 153
+5966 146 175
+5967 157  12
+5968 154 175
+5969 154  73
+5970 157  12
+5971 167  12
+5972 151 165
+5973 156 151
+5974 147 156
+5975  40 164
+5976 143  40
+5977 155 156
+5978 144 143
+5979 163 155
+5980  72 144
+5981 134 163
+5982 156  40
+5983  42  75
+5984  51  40
+5985  73 163
+5986  12 151
+5987  40 172
+5988  40 145
+5989 146 157
+5990 157 146
+5991 162  50
+5992  40 143
+5993  50 155
+5994 165 144
+5995 151 124
+5996 156 141
+5997 164 142
+5998  40 154
+5999 151 145
+6000  40  51
+6001  75  40
+6002  40  57
+6003  60  40
+6004  73 163
+6005  40 151
+6006 151 172
+6007  40 145
+6008  74 157
+6009  40 146
+6010 156  50
+6011 143 103
+6014 163 124
+6015  73 141
+6016  40 142
+6017 151 154
+6018  53 145
+6019  53  51
+6020  51  73
+6022  40  12
+6023  40 166
+6024  40 157
+6025  40 151
+6026 160 144
+6027 162  40
+6028 151 165
+6029 156 163
+6030 164 141
+6031 146 147
+6032  50 145
+6033  42  50
+6034 134  51
+6035 164  12
+6036  45 173
+6037 163  12
+6038 134  40
+6039 164  40
+6040  45 160
+6041 163 162
+6042 134 151
+6044  42 164
+6045  54 146
+6046  40  50
+6047 143  42
+6048 155 124
+6049 144 150
+6050 124 145
+6051 141  40
+6052 142 163
+6053 154 150
+6055 133 154
+6056 151 154
+6057 135  40
+6058  56 150
+6059 143 141
+6060 155 163
+6061 144  40
+6062 116 157
+6063 141 156
+6064 155 154
+6065 145 171
+6066  54  40
+6067  40 164
+6068 143 150
+6069 155 145
+6070 144  40
+6071 124 146
+6072 141 157
+6073 142 154
+6075 145 157
+6076 133 167
+6078 135 156
+6079  56 147
+6080 141  40
+6081 162 143
+6082 147 155
+6083 163 144
+6084 122 163
+6085 145  72
+6086 161 134
+6087 165 156
+6088 151  42
+6089 162  51
+6090 145  73
+6091 144  12
+6092  51  40
+6093  73  40
+6094  12 146
+6095  40 157
+6096  40 162
+6097 160  40
+6098 162  50
+6099 151 165
+6100 156 151
+6101 164 156
+6102 146 164
+6103  50  40
+6104  42 151
+6105 123  40
+6106 164  75
+6107 141  40
+6108 162  60
+6109 164  73
+6111 167 151
+6112 151  40
+6113 164  74
+6114 150  40
+6115  40 156
+6116  41 143
+6117  40 155
+6118 164 144
+6119 157 163
+6120  40  73
+6121 151  40
+6122 156 151
+6123 166  53
+6124 157  53
+6125 153  51
+6126 145  12
+6128 141  40
+6130 125  40
+6131 156 160
+6132 151 162
+6133 170 151
+6134  40 156
+6135 163 164
+6136 150 146
+6137 145  50
+6138 154  42
+6139 154 134
+6140  40 164
+6141 143  45
+6142 155 163
+6143 144 134
+6144 134 164
+6145 156  45
+6146  42 163
+6147  51 134
+6148  73 156
+6149  12  42
+6150 175  54
+6151  12  40
+6152  12 143
+6153  57 155
+6154  52 144
+6155  40 124
+6156 160 141
+6157 162 142
+6158 145 154
+6159  72 145
+6160  72 133
+6161  40 151
+6162 153 135
+6163  40  56
+6164  76 143
+6165  75 155
+6166  40 144
+6167  60 116
+6168  54 141
+6169  40 155
+6170 141 145
+6171 162  54
+6172 147  40
+6173 133 143
+6174 135 155
+6175  40 144
+6176 141 124
+6177 162 141
+6178 145 142
+6179  40 154
+6180 163 145
+6181 145 133
+6182 164 151
+6183  40 135
+6184 141  56
+6185 154 141
+6187 145 147
+6188 141 163
+6189 144 122
+6190 171 145
+6191  73 161
+6192  73 165
+6193  40 151
+6194 160 162
+6195 157 145
+6196 163 144
+6197 164  51
+6198  72  73
+6199  72  12
+6201 103  40
+6202 150 160
+6203 145 162
+6204 143 151
+6205 153 156
+6206  40 164
+6207 164 146
+6208 150  50
+6209 141  42
+6210 164 123
+6211  40 164
+6214 147 164
+6215 163  40
+6216  40 167
+6217 141 151
+6218 162 164
+6219 145 150
+6220  12  40
+6221  40  41
+6222  52  40
+6223  40 164
+6225 153  40
+6226  54 151
+6227  40 156
+6228 141 166
+6229 156 157
+6230 144 153
+6231  40 145
+6232 164  40
+6233 150 141
+6234 145  40
+6235  40 125
+6237 145 151
+6238 145 170
+6239 144  40
+6240 145 163
+6241 144 150
+6242  40 145
+6243 163 154
+6244 151 154
+6245 155  40
+6246 104 143
+6247 151 155
+6248 163 144
+6249 153 134
+6250  40 156
+6251 157  42
+6252 162  51
+6253  40  73
+6254 143  12
+6255 146 175
+6256 166  12
+6257  40  12
+6258 145  57
+6259 170  52
+6260 151  40
+6261 163 160
+6262 164 162
+6263 163 145
+6264  40  72
+6265 142  72
+6266 145  40
+6267 146 153
+6268 157  40
+6269 162  76
+6270 145  75
+6272 151  60
+6273 156  54
+6274 166  40
+6275 157 141
+6276 153 162
+6277 151 147
+6278 156 133
+6279 147 135
+6281 164 141
+6282 150 162
+6284  12  40
+6285  40 163
+6286  52 145
+6287  40 164
+6288 141  40
+6289 160 141
+6290 160 154
+6292 157 145
+6293 160 141
+6294 162 144
+6295 151 171
+6296 141  73
+6297 164  73
+6298 145  40
+6299  40 160
+6300 141 157
+6301 143 163
+6303 151  72
+6304 157  72
+6305 156  40
+6306  56 103
+6307  40 150
+6308  52 145
+6309  57 143
+6310  12 153
+6311  12  40
+6312 166 164
+6313 157 150
+6314 151 141
+6315 144 164
+6317 151 141
+6318 156 162
+6319 166 147
+6320 157 163
+6321 153  40
+6322 145 141
+6323 103 162
+6324 155 145
+6325 144  12
+6326  50  40
+6327 151  52
+6328 156  40
+6329 164 157
+6330  40 153
+6331 153  54
+6332  54  40
+6333  40 141
+6334 101 156
+6335 162 144
+6336 147  40
+6337  40 164
+6338  52 150
+6339 141 145
+6340 162  40
+6341 147 156
+6342  51 145
+6343  12 145
+6344 173 144
+6345  12 145
+6346  40 144
+6348 165 163
+6350 156 155
+6351 164 104
+6352  40 151
+6353 157 163
+6356  75 157
+6357  40 162
+6358  61  40
+6359  73 143
+6360  12 146
+6361  40 166
+6363 151 145
+6364 146 170
+6365  40 151
+6366  50 163
+6367 143 164
+6368 155 163
+6369 144  40
+6370 124 142
+6371 141 145
+6372 142 146
+6373 154 157
+6374 145 162
+6375 133 145
+6376 153  40
+6377 135 151
+6378  56 156
+6379 147 166
+6380 154 157
+6381 157 153
+6382 142 151
+6383 141 156
+6384 154 147
+6385 163  40
+6386 116 164
+6387 145 150
+6389 144  12
+6390 145  40
+6391 144  52
+6392 133  40
+6393  60 141
+6394 135 160
+6395  40 160
+6396  75 162
+6397  75 157
+6398  40 160
+6399  47 162
+6400 166 151
+6401  47 141
+6402  40 164
+6403  46 145
+6404  46  40
+6405  40 141
+6407 167 164
+6408 144 151
+6409 126 157
+6410 116 156
+6411 111  56
+6412 116  40
+6413  40  52
+6414  75  57
+6415  75  12
+6416  40  12
+6417  60 166
+6418  51 157
+6419  12 151
+6420  40 144
+6422 173 151
+6423  12 156
+6424  40 166
+6425  40 157
+6426  40 153
+6427  40 145
+6428 157 103
+6429 153 155
+6430  40 144
+6431  75  50
+6432  40 151
+6433  60 156
+6434  73 164
+6435  12  40
+6436  40 153
+6437  40  54
+6439  40 101
+6440 160 162
+6441 162 147
+6442 151  40
+6443 156  52
+6444 164 141
+6445 146 162
+6446  50 147
+6447  42  51
+6448 103  12
+6449 155 173
+6450 144  12
+6452  45  40
+6453 163 165
+6454  40 151
+6456 145 164
+6457 145  40
+6458 144 157
+6459 163 153
+6461 164  75
+6462 150  40
+6463 145  61
+6464  40  73
+6465 143  12
+6466 146  40
+6467 166  40
+6468  40 151
+6469 164 146
+6470 157  40
+6471  40  50
+6472 142 143
+6473 145 155
+6474  40 144
+6475  41 124
+6476  75 141
+6477  40 142
+6478  60 154
+6479  56 145
+6480 134 133
+6481 156 153
+6482  42 135
+6483  54  56
+6484  40 147
+6485 143 154
+6486 155 157
+6487 144 142
+6488 124 141
+6489 141 154
+6490 142 163
+6491 154 116
+6493 133 145
+6494 153 144
+6495 135 145
+6496  56 144
+6497 143 133
+6498 155  60
+6499 144 135
+6500 116  40
+6501 141  75
+6502 155  75
+6503 145  40
+6504  51  47
+6505  73 166
+6506  12  47
+6508  40  46
+6509 175  46
+6510  12  40
+6511  40 143
+6512  40 167
+6513 145 144
+6514 154 126
+6515 163 116
+6516 145 111
+6517  40 116
+6518 151  40
+6519 146  75
+6520  40  75
+6521  50  40
+6522 143  60
+6523 155  51
+6524 144  40
+6525 124 173
+6526 141  12
+6527 142  40
+6528 154  40
+6529 145  40
+6530 133  40
+6531 153 157
+6532 135 153
+6533  56  40
+6534 147  75
+6535 154  40
+6536 157  60
+6537 142  73
+6538 141  12
+6539 154  40
+6540 163  40
+6541 116  40
+6542 145  40
+6543 145 160
+6544 144 162
+6545 145 151
+6546 144 156
+6547 133 164
+6548  60 146
+6549 135  50
+6550  40  42
+6551  75 103
+6552  75 155
+6553  40 144
+6554  47  40
+6555 155  45
+6556  47 163
+6558  46 156
+6559  46 145
+6560  40 145
+6561 155 144
+6562 164 163
+6563 141  40
+6564 142 164
+6565  40 150
+6566  75 145
+6567  75  40
+6568  40 143
+6569  60 146
+6570  51 166
+6571  12  40
+6572  40 164
+6573  40 157
+6574 173  40
+6575  12 142
+6576  40 145
+6578  40  41
+6579  40  75
+6580 157  40
+6581 153  60
+6582  40  56
+6583  75 134
+6584  40 156
+6585  60  42
+6586  73  54
+6587  12  40
+6588  40 143
+6589  40 155
+6590  40 144
+6591  40 124
+6592 160 141
+6593 162 142
+6594 151 154
+6595 156 145
+6596 164 133
+6597 146 153
+6598  50 135
+6599  42  56
+6600 103 143
+6603  40 116
+6604  45 141
+6605 163 155
+6606  40 145
+6607 156  51
+6608 145  73
+6609 145  12
+6610 144  40
+6611 163  40
+6612  40 175
+6613 164  12
+6614 150  40
+6615 145  40
+6616  40 145
+6617 155 154
+6618 164 163
+6619 141 145
+6620 142  40
+6621  40 151
+6622 164 146
+6623 157  40
+6624  40  50
+6625 142 143
+6626 145 155
+6627  40 144
+6628  41 124
+6629  75 141
+6630  40 142
+6631  60 154
+6632  56 145
+6633 134 133
+6634 156 153
+6635  42 135
+6636  54  56
+6637  40 147
+6638 143 154
+6639 155 157
+6640 144 142
+6641 124 141
+6642 141 154
+6643 142 163
+6644 154 116
+6646 133 145
+6647 153 144
+6648 135 145
+6649  56 144
+6650 143 133
+6651 155  60
+6652 144 135
+6653 116  40
+6654 141  75
+6655 155  75
+6656 145  40
+6657  51  47
+6658  73 155
+6659  12  47
+6661  40  46
+6662 175  46
+6663  12  40
+6664  12 155
+6665  40 164
+6666  40 141
+6667 143 142
+6668 150  40
+6669 141  75
+6670 162  75
+6672  52  60
+6673 162  51
+6674 145  40
+6675 161 173
+6676  40  12
+6677  75  40
+6679 143  40
+6680 155  40
+6681 144 157
+6682 124 153
+6683 141  40
+6684 142  75
+6685 154  40
+6686 145  60
+6687 133  73
+6688 153  12
+6689 135  40
+6690  56  40
+6691 141  40
+6692 162  40
+6693 147 160
+6694 163 162
+6695 122 151
+6696 145 156
+6697 161 164
+6698 165 146
+6699 151  50
+6700 162  42
+6701 145 103
+6702 144 155
+6703  73 144
+6704  12  40
+6705  40  45
+6706  40 163
+6707 165  40
+6708 151 156
+6709 156 145
+6710 164 145
+6711  40 144
+6712 156 163
+6713 141  40
+6714  40 164
+6715  75 150
+6716  40 145
+6717 163  40
+6718 164 155
+6719 162 164
+6720 154 141
+6721 145 142
+6722 156  40
+6723  50 164
+6724 162 157
+6725 145  40
+6726 161 142
+6727  51 145
+6728  73  40
+6729  12  41
+6730  40  75
+6732 146  60
+6733 157  56
+6734 162 134
+6735  40 156
+6736  50  42
+6737 165  54
+6738 151  40
+6739 156 143
+6740 164 155
+6741  40 144
+6742 151 124
+6743  40 141
+6744  75 142
+6745  40 154
+6746  60 145
+6747  73 133
+6748  40 153
+6749 151 135
+6750  40  56
+6751  74 143
+6752  40 155
+6753 156 144
+6754 141 116
+6755  73 141
+6756  40 155
+6757 151 145
+6758  53  51
+6759  53  73
+6760  51  12
+6761  12  40
+6763  40 175
+6764 173  12
+6768  40 143
+6769  40 150
+6770 151 141
+6771 146 162
+6773  50  52
+6777 133  40
+6778 151  75
+6779 135  40
+6780  40 143
+6781  75 155
+6782  75 144
+6783  40 124
+6784  47 141
+6785 163 142
+6786  47 154
+6787  40 145
+6788  46 133
+6789  46 153
+6790  40 135
+6791  50  56
+6795 133 163
+6796 151 122
+6797 135 145
+6798  56 161
+6799 163 165
+6800  40 151
+6801  75 162
+6802  75 145
+6803  40 144
+6804  60  73
+6805  40  12
+6806 174  40
+6807 174  40
+6808  40 165
+6809 141 151
+6810 162 156
+6811 147 164
+6812 133  40
+6813 151 156
+6814 135 141
+6815  56  40
+6816 163  75
+6817 133  40
+6818  60 163
+6819 135 164
+6820  40 162
+6821  75 154
+6822  75 145
+6823  40 156
+6824  60  50
+6825  51 162
+6826  51 145
+6827  12 161
+6828  40  51
+6829  40  73
+6830  40  12
+6832 173  40
+6833  12 146
+6834  40 157
+6835  40 162
+6837  40  50
+6838  40 165
+6839  40 151
+6840 157 156
+6841 153 164
+6843  75 151
+6845  60  75
+6846  73  40
+6847  12  60
+6848  40  73
+6850  40 151
+6852  40  74
+6854 160 156
+6855 162 141
+6856 151  73
+6857 156  40
+6858 164 151
+6859 146  53
+6860  50  53
+6861  42  51
+6862 141  40
+6863 162 173
+6864 147  12
+6866  43  40
+6867  45  40
+6868 144  40
+6869  40 151
+6870 155 146
+6871 165  40
+6872 163  50
+6873 164 162
+6874  40 145
+6875 142 161
+6876 145 133
+6877  40 151
+6878 141 135
+6880 156  75
+6881 157  75
+6882 156  40
+6883  55  47
+6884 145 163
+6885 155  47
+6886 160  40
+6887 164  46
+6888 171  46
+6890 163  50
+6891 164 141
+6893 151 147
+6894 156 133
+6895 147 151
+6896  56 135
+6897 134  56
+6898 156 163
+6899  42  40
+6900  54  75
+6901  40  75
+6902 151  40
+6903  51  60
+6904  73  40
+6905  12 174
+6906  40 174
+6908  40 141
+6909  40 162
+6910 175 147
+6911  12 133
+6912  40 151
+6913  40 135
+6914  40  56
+6915  40 163
+6916 151 133
+6917 146  60
+6918  40 135
+6919  50  40
+6920  50  75
+6921 162  75
+6922 145  40
+6923 161  60
+6924 133  51
+6925 151  51
+6926 135  40
+6927  40 173
+6928  75  12
+6929  75  40
+6931  47  40
+6932 165  40
+6933  47  40
+6934  51  40
+6935  40 157
+6936  46 153
+6937  46  40
+6938  40  75
+6939  50  40
+6940 141  60
+6941 162  73
+6942 147  12
+6943 133  40
+6944 151  40
+6945 135  40
+6946  56  40
+6947 163  40
+6949  75 160
+6950  75 162
+6951  40 151
+6952  60 156
+6953  40 164
+6954 174 146
+6955 174  50
+6956  40  42
+6957  41 141
+6958 151 162
+6959 163 147
+6960 104  40
+6961 151  43
+6962 147  45
+6963 151 144
+6964 164  40
+6965  50 155
+6966 141 165
+6967 162 163
+6968 147 164
+6969 133  40
+6970 151 142
+6971 135 145
+6972  56  40
+6973 163 141
+6974 133  40
+6975  60 156
+6976 135 157
+6977  51 156
+6978  51  55
+6979  51 145
+6980  12 155
+6981  40 160
+6982  40 164
+6983  40 171
+6985 173 163
+6986  12 164
+6987  40 162
+6988  40 151
+6989  40 156
+6990  40 147
+6991  40  56
+6992  40 134
+6993 157 156
+6994 153  42
+6995  40  54
+6996  75  40
+6997  40 151
+6998  60  51
+7005  40 175
+7006  40  12
+7007 160  40
+7008 162  40
+7009 151  40
+7010 156  40
+7011 164 151
+7013  50  40
+7014  42  50
+7015 141  50
+7017 147 145
+7018  40 161
+7019  43 133
+7020  45 151
+7021 144 135
+7023  50  75
+7024  45  75
+7025 163  40
+7026  51  47
+7027  40 165
+7028 155  47
+7029 165  51
+7030 163  40
+7031 164  46
+7032  40  46
+7033 142  40
+7034 145  50
+7035  40 141
+7036 141 162
+7037  40 147
+7038 156 133
+7039 165 151
+7040 155 135
+7041 142  56
+7042 145 163
+7043 162  40
+7044  56  75
+7045 134  75
+7046 156  40
+7047  42  60
+7048  54  40
+7049  40 174
+7050 151 174
+7051  54  40
+7052  40  41
+7053 141 151
+7054 162 163
+7055 147 104
+7056 133 151
+7057 151 147
+7058 135 151
+7059  56 164
+7060 163  50
+7061  51 141
+7062  73 162
+7063  12 147
+7064  40 133
+7065  40 151
+7066  40 135
+7067  40  56
+7068 175 163
+7069  12 133
+7070  40  60
+7071  40 135
+7072 175  51
+7073  12  51
+7074  40  51
+7076 151 173
+7077 146  12
+7078  40  11
+7079  50 157
+7080 157 153
+7081 153  40
+7082  51  75
+7083  12  40
+7084  40  60
+7085  40  73
+7086  40  12
+7087  40  11
+7088  50 160
+7089  52 162
+7090 143 151
+7091 155 156
+7092 144 164
+7093 124 146
+7094 141  50
+7095 142  42
+7096 154 141
+7097 145 162
+7098 133 147
+7099 153  40
+7100 135  43
+7101  56  45
+7102 146 144
+7103 165  40
+7104 156  50
+7105 143  45
+7106  51 163
+7107  50  51
+7108 141  40
+7109 162 155
+7110 147 165
+7111  51 163
+7112  73 164
+7113  12  40
+7114 175 142
+7115  12 145
+7116  12  40
+7117  57 141
+7118  52  40
+7119  40 156
+7120 160 165
+7121 162 155
+7122 145 142
+7123  72 145
+7124  72 162
+7125  40  56
+7126 142 134
+7127 165 156
+7128 146  42
+7129 133  54
+7130 135  40
+7131  40 151
+7132 151  54
+7133 163  40
+7134  40 141
+7135 164 162
+7136 150 147
+7137 145 133
+7138  40 151
+7139 143 135
+7140 157  56
+7141 155 163
+7142 155  51
+7143 141  73
+7144 156  12
+7145 144  40
+7147 154  40
+7148 151  40
+7149 156 175
+7150 145  12
+7152 141  40
+7153 163 175
+7154  40  12
+7155 164  40
+7156 171  40
+7157 160 151
+7158 145 146
+7159 144  40
+7160  40  50
+7161 142 157
+7162 171 153
+7163  40  51
+7164 164  12
+7165 150  40
+7166 145  40
+7168 165  40
+7169 163  50
+7170 145  52
+7171 162 143
+7172  54 155
+7173  40 144
+7174 156 124
+7175 115 141
+7176 141 142
+7177 170 154
+7178  40 145
+7179  53 133
+7180  40 153
+7181  61 135
+7182  40  56
+7183  75 146
+7184  75 165
+7185  12 156
+7186  40 143
+7187  52  51
+7189 163  50
+7190 151 141
+7191 172 162
+7192 145 147
+7193 157  51
+7194 146  73
+7195  50  12
+7196 164 175
+7197 171  12
+7198 160  12
+7199 145  57
+7200 163  52
+7201  51  40
+7202  73 160
+7203  73 162
+7204  40 145
+7205 160  72
+7206 157  72
+7207 163  40
+7208 164 142
+7209  72 165
+7210  72 146
+7211  40 133
+7212 120 135
+7213 141  40
+7214 162 151
+7216 145  40
+7217  40 164
+7218 164 150
+7219 150 145
+7220 145  40
+7221  40 143
+7222 154 157
+7223 151 155
+7224 156 155
+7225 145 141
+7226  54 156
+7227  40 144
+7228 141  40
+7229 156 154
+7230 144 151
+7231  40 156
+7232 163 145
+7233 145  40
+7234 164 141
+7235  40 163
+7236 164  40
+7237 171 164
+7238 160 171
+7239 145 160
+7240 163 145
+7241 133 144
+7242 135  40
+7243  54 142
+7244  40 171
+7245 141  40
+7246 162 164
+7247 147 150
+7248 133 145
+7249 135  40
+7250  56 165
+7252  40 145
+7253 141 162
+7254 156  54
+7255 144  40
+7256  12 156
+7257  40 115
+7258  52 141
+7259  40 170
+7260 141  40
+7261 162  53
+7262 147  40
+7263 133  61
+7264 135  40
+7265  56  75
+7266 165  75
+7267  40  12
+7268 146  40
+7269 151  52
+7270 145  40
+7271 154 163
+7272 144 151
+7273 163 172
+7274  56 145
+7275  12 157
+7276  40 146
+7277  52  50
+7278  57 164
+7279  12 171
+7280  12 160
+7281 166 145
+7282 157 163
+7283 151  51
+7284 144  73
+7285  40  73
+7286 163  40
+7287 145 160
+7288 164 157
+7289 101 163
+7290 162 164
+7291 147  72
+7292 163  72
+7293 107  40
+7294 151 120
+7295 166 141
+7296 145 162
+7297 156 163
+7298  50 145
+7299 143  40
+7300 150 164
+7301 141 150
+7302 162 145
+7304  52 154
+7305 142 151
+7306 165 156
+7307 146 145
+7310 101 141
+7311 162 156
+7312 147 144
+7314  52 163
+7315 141 145
+7316 162 164
+7317 147  40
+7318  54 164
+7319  40 171
+7320 143 160
+7321 150 145
+7322 141 163
+7323 162 133
+7324  40 135
+7325  52  54
+7326 164  40
+7327 171 141
+7328 160 162
+7329 145 147
+7330 163 133
+7331  54 135
+7332  40  56
+7333 165 163
+7334 151  40
+7335 156 141
+7336 164 156
+7337  40 144
+7338 156  12
+7339 115  40
+7340 141  52
+7341 170  40
+7342  51 141
+7343  12 162
+7344 173 147
+7345  12 133
+7346  40 135
+7347  40  56
+7348 146 165
+7349 157  40
+7350 162 146
+7351  40 151
+7352  50 145
+7353 165 154
+7354 151 144
+7355 156 163
+7356 164  56
+7357  40  12
+7358 151  40
+7359  40  52
+7360  75  57
+7361  40  12
+7362  60  12
+7363  73 166
+7364  40 157
+7366  40 144
+7367  74  40
+7368  40 163
+7369 156 145
+7370 115 164
+7371 141 101
+7372 170 162
+7373  73 147
+7374  40 163
+7375 151 107
+7376  53 151
+7377  53 166
+7378  51 145
+7379  12 156
+7380  40  50
+7381  40 143
+7382 173 150
+7383  12 141
+7384  40 162
+7386  40  52
+7387  40 142
+7388 141 165
+7389 162 146
+7390 147  54
+7391 133  40
+7392 151 101
+7393 135 162
+7394  56 147
+7395 163  40
+7396  40  52
+7397  75 141
+7398  40 162
+7399  60 147
+7400  73  54
+7401  12  40
+7402  40 143
+7403  40 150
+7404  40 141
+7405  40 162
+7406 164  40
+7407 171  52
+7408 160 164
+7409 145 171
+7410 163 160
+7411 133 145
+7412 151 163
+7413 135  54
+7415  75 165
+7416  40 151
+7417  60 156
+7418  73 164
+7419  12  40
+7420  40 156
+7421  40 115
+7422 175 141
+7423  12 170
+7424  40  51
+7425  40  12
+7426 164 173
+7427 171  12
+7428 160  40
+7429 145  40
+7430 163 146
+7431 133 157
+7432 156 162
+7433 115  40
+7434 141  50
+7435 170 165
+7436 135 151
+7437  40 156
+7438  75 164
+7440  60 151
+7441  73  40
+7442  12  75
+7443  12  40
+7444  40  60
+7445  40  73
+7446 163  40
+7447 164 151
+7448 162  40
+7449 164  74
+7450 157  40
+7451 153 156
+7452  50 115
+7453 142 141
+7454 165 170
+7455 146  73
+7456  54  40
+7457  40 151
+7458  42  53
+7459  40  53
+7460 134  51
+7461 164  40
+7462 134 173
+7463 156  12
+7464  42  40
+7465  51  40
+7466  73  40
+7468  57 141
+7469  57 162
+7470  40 147
+7471 164 133
+7472 145 151
+7473 162 135
+7474 155  56
+7475 151 163
+7476 156  40
+7477 141  75
+7478 164  40
+7479 145  60
+7480 163  73
+7481  40  12
+7482 164  40
+7483 150  40
+7484 145  40
+7486 143 164
+7487 155 171
+7488 144 160
+7489  40 145
+7490 156 163
+7491 141 133
+7492 155 151
+7493 145 135
+7495 167  75
+7496 151  40
+7497 164  60
+7498 150  73
+7499  40  12
+7500 141  40
+7502 134 175
+7503  60  12
+7504  12  40
+7505  12  40
+7506  40 164
+7507  40 171
+7508 146 160
+7509 157 145
+7510 162 163
+7511  40 133
+7512  50 156
+7513 165 115
+7514 151 141
+7515 156 170
+7516 164 135
+7518 151  75
+7520  75  60
+7521  40  73
+7522  60  12
+7523  73  12
+7525 151  40
+7526  40 163
+7527  74 164
+7528  40 162
+7529 156 164
+7530 115 157
+7531 141 153
+7532 170  50
+7533  73 142
+7534  51 165
+7535  12 146
+7536  40  54
+7538 173  42
+7539  12  40
+7540  40 134
+7541  40 164
+7542  40 134
+7543  40 156
+7544 143  42
+7545 150  51
+7546 141  73
+7547 162  11
+7548  40  11
+7549  52  57
+7550 161  57
+7552  75 164
+7553  40 145
+7554 163 162
+7555 164 155
+7556 162 151
+7557 164 156
+7558 157 141
+7559 153 164
+7560  50 145
+7561  60 163
+7562  54  40
+7563  40 164
+7564  42 150
+7565  40 145
+7566 134  40
+7567 164 143
+7568  42 155
+7569  51 144
+7570  73  40
+7571  12 156
+7572  40 141
+7573  40 155
+7574  40 145
+7576 151 167
+7577 146 151
+7578  40 164
+7579  50 150
+7580 161  40
+7581  40 141
+7582  75  40
+7583  75 134
+7584  40  60
+7585  60  12
+7586  40  12
+7587 174  40
+7588 174  40
+7589  40 146
+7590  52 157
+7591 161 162
+7593  75  50
+7594  75 165
+7595  40 151
+7596  60 156
+7597  51 164
+7598  12  40
+7599  40 151
+7601  40  75
+7603  40  60
+7604  40  73
+7605 142  40
+7606 162 151
+7607 145  40
+7608 141  74
+7609 153  40
+7610  73 156
+7611  12 115
+7612  40 141
+7613  40 170
+7614  40  73
+7615  40  51
+7616 141  40
+7617 162 173
+7618 147  12
+7619 133  40
+7620 151  40
+7621 135  40
+7622  56  40
+7623 163  40
+7625  75 143
+7626  40 150
+7627 161 141
+7628  73 162
+7629  12  40
+7630  40  52
+7631  40 161
+7633  40  75
+7634 141  40
+7635 162 163
+7636 147 164
+7637 133 162
+7638 151 164
+7639 135 157
+7640  56 153
+7641 165  50
+7642  40  60
+7643  75  54
+7645 164  42
+7646 157  40
+7647 116 134
+7648 165 164
+7649 155  42
+7650  50  51
+7651 161  73
+7652  51  12
+7653  73  40
+7654  12  40
+7659 164 151
+7660 171 146
+7661 160  40
+7662 145  50
+7663 163 161
+7664 133  40
+7665 151  75
+7666 135  75
+7668  75  60
+7670 151 174
+7671 163 174
+7672 104  40
+7673 151  52
+7674 147 161
+7675 151  40
+7676 164  75
+7677  50  75
+7678  52  40
+7679 161  60
+7682  77 142
+7683  40 162
+7684  47 145
+7685 165 141
+7686  47 153
+7687  40  73
+7688  72  12
+7690  47  40
+7691 163  40
+7692  47  40
+7693  73  40
+7694  12  40
+7695  40 141
+7696  40 162
+7697  40 147
+7698  40 133
+7699 156 151
+7700 101 135
+7701 162  56
+7702 147 163
+7703 163  40
+7704  40  75
+7705  75  40
+7706  40 161
+7707  53  73
+7708  53  12
+7709 151  40
+7710  73  40
+7711  12  40
+7714 175  40
+7715  12 141
+7716 175 162
+7717  12 147
+7718  12 133
+7719  57 151
+7720  52 135
+7721  40  56
+7722 160 165
+7723 162  40
+7724 145  75
+7725  72  40
+7726  72 164
+7727  40 157
+7728 156 116
+7729 141 165
+7731 145  50
+7732  40 161
+7733 160  51
+7734 164  73
+7735 163  12
+7737 164  40
+7738 157  40
+7740 164  40
+7741 150  40
+7742 145 164
+7743  40 171
+7744 143 160
+7745 157 145
+7746 155 163
+7747 155 133
+7748 141 151
+7749 156 135
+7750 144  40
+7751  40  75
+7752 164  40
+7753 157 151
+7754 153 163
+7755 145 104
+7756 156 151
+7757  54 147
+7758  40 151
+7759 141 164
+7760 162  50
+7761 147  52
+7762 164 161
+7763 171  51
+7764 160  77
+7765 145  40
+7766 163  47
+7767 133 165
+7768 135  47
+7770 151  72
+7771 163  40
+7772  40  47
+7773 141 163
+7774  40  47
+7775 163  73
+7776 164  12
+7777 162  40
+7778 151  40
+7779 156  40
+7780 147  40
+7782 157  40
+7783 146 156
+7784  12 101
+7785  40 162
+7786  52 147
+7787  40 163
+7788  47  40
+7789 163  75
+7790  47  40
+7791  57  53
+7792  47  53
+7793 165 151
+7794  47  73
+7795  40  12
+7796 151  40
+7797 156  40
+7798 144 175
+7799 151  12
+7800 143 175
+7801 141  12
+7802 164  12
+7803 151  57
+7804 156  52
+7805 147  40
+7806  40 160
+7807 164 162
+7808 150 145
+7809 145  72
+7810  40  72
+7811 164  40
+7812 171 156
+7813 160 141
+7814 145 155
+7815 163 145
+7817 157 160
+7818 146 164
+7819  40 163
+7820 141  40
+7821 162 164
+7822 147 157
+7823 165  40
+7824 155 164
+7825 145 150
+7826 156 145
+7827 164  40
+7828 163 143
+7829  40 157
+7830 164 155
+7831 150 155
+7832 145 141
+7833  40 156
+7834 165 144
+7835 163  40
+7836 145 164
+7837 162 157
+7838  40 153
+7839 147 145
+7840 141 156
+7841 166  54
+7842 145  40
+7843  73 141
+7844  73 162
+7845  40 147
+7846 160 164
+7847 157 171
+7848 163 160
+7849 164 145
+7850  72 163
+7851  72 133
+7852  12 135
+7854  52 151
+7855  40 163
+7856 106  40
+7857 151 141
+7858 156  40
+7859 144 163
+7860  40 164
+7861 164 162
+7862 150 151
+7863 145 156
+7864  40 147
+7865 162  40
+7867 167 146
+7868  40  12
+7869 156  40
+7870 165  52
+7871 155  40
+7872 142  47
+7873 145 163
+7874 162  47
+7875  40  57
+7876 157  47
+7877 146 165
+7878  40  47
+7879 164  40
+7880 150 151
+7881 145 156
+7882  40 144
+7883  50 151
+7884 160 143
+7885 157 141
+7886 163 164
+7887 163 151
+7888 151 156
+7889 142 147
+7890 154  40
+7891 171 164
+7892  40 150
+7893 157 145
+7894 166  40
+7895 145 164
+7896 162 171
+7897 154 160
+7898 157 145
+7899 141 163
+7900 144  40
+7901 145 157
+7902 144 146
+7903  51  40
+7904  40 141
+7905 143 162
+7906 155 147
+7907 144 165
+7908  40 155
+7909 147 145
+7910 151 156
+7911 166 164
+7912 145 163
+7913 156  40
+7914  40 164
+7915 151 150
+7916 156 145
+7917  12  40
+7918  40 165
+7919  52 163
+7920  40 145
+7921 156 162
+7922 141  40
+7923 155 147
+7924 145 141
+7925 133 166
+7926 135 145
+7927  56  73
+7928  40  73
+7930 122 160
+7931 145 157
+7932 164 163
+7933 165 164
+7934 162  72
+7935 156  72
+7936  40  12
+7937 164  40
+7938 150  52
+7939 151  40
+7940 163 106
+7941  40 151
+7943 165 144
+7944 155  40
+7945 142 164
+7946 145 150
+7947 162 145
+7949 151 162
+7950 146 157
+7951  40 167
+7952 146  40
+7953 157 156
+7955 156 155
+7956 144 142
+7957  73 145
+7958  40 162
+7959 162  40
+7960 145 157
+7961 164 146
+7962 165  40
+7963 162 164
+7964 156 150
+7965  40 145
+7966  55  40
+7967  61  50
+7968  40 160
+7970 164 163
+7971 150 163
+7972 145 151
+7973 162 142
+7974 167 154
+7975 151 171
+7976 163  40
+7977 145 157
+7978  56 166
+7979  40 145
+7980  52 162
+7981  57 154
+7982  12 157
+7983  12 141
+7984 151 144
+7985 156 145
+7986 164 144
+7987  40  51
+7988 146  40
+7989 151 143
+7990 156 155
+7992 103  40
+7993 155 147
+7994 144 151
+7995  50 166
+7996 143 145
+7997 150 156
+7998 141  40
+7999 162 151
+8000  40 156
+8001  52  12
+8002 156  40
+8003 141  52
+8004 155  40
+8005 145 156
+8006  54 141
+8007  40 155
+8008 143 145
+8009 150 133
+8010 141 135
+8011 162  56
+8013  52  40
+8014 141 122
+8015 162 145
+8016 147 164
+8017 164 165
+8018 171 162
+8019 160 156
+8020 145  40
+8021 163 164
+8022  51 150
+8023  12 151
+8024 173 163
+8025  12  40
+8026  40 156
+8027  40 165
+8028 146 155
+8029 157 142
+8030 162 145
+8031  40 162
+8032  50  40
+8033 165 151
+8034 151 146
+8035 156  40
+8036 164 146
+8037  40 157
+8038 151 165
+8039  40 156
+8040  75 144
+8041  40  73
+8042  60  40
+8043  73 162
+8044  40 145
+8045 151 164
+8046  40 165
+8047  74 162
+8048  40 156
+8049 156  40
+8050 143  55
+8051 155  61
+8052 144  40
+8053 163 157
+8054  73 164
+8055  40 150
+8056 151 145
+8057  53 162
+8058  53 167
+8059  51 151
+8060  12 163
+8061  40 145
+8062  40  56
+8063 173  40
+8064  12  52
+8065  40  57
+8066  40  12
+8067  40  12
+8068  40 151
+8069 151 156
+8070 146 164
+8072  50 146
+8073 163 151
+8074 164 156
+8075 162 144
+8076 143 103
+8078 160 144
+8080 156 143
+8081 141 150
+8082 155 141
+8083 145 162
+8084  54  40
+8085  40  52
+8086 143 156
+8087 155 141
+8088 144 155
+8089 124 145
+8090 141  54
+8091 142  40
+8092 154 143
+8093 145 150
+8094 133 141
+8095 151 162
+8096 135  40
+8097  56  52
+8098 143 141
+8099 155 162
+8100 144 147
+8101 116 164
+8102 141 171
+8103 155 160
+8105  51 163
+8106  40  51
+8107  75  12
+8108  75 173
+8109  40  12
+8110  60  40
+8112  46 146
+8113  46 157
+8114  40 162
+8115 163  40
+8116 164  50
+8117 162 165
+8118 143 151
+8119 155 156
+8120 160 164
+8121  50  40
+8122 141 151
+8123 162  40
+8124 147  75
+8125 164  40
+8126 171  60
+8127 160  73
+8128 145  40
+8129 163 151
+8130  54  40
+8131  40  74
+8132 143  40
+8133 155 156
+8134 144 143
+8135 124 155
+8136 141 144
+8137 142 163
+8138 154  73
+8139 145  40
+8140 133 151
+8141 151  53
+8142 135  53
+8143  56  51
+8144 141  40
+8145 162 173
+8146 147  12
+8147 163  40
+8148 122  40
+8149 145  40
+8150 161  40
+8151 165 151
+8152 151 146
+8153 162  40
+8154 145  50
+8155 144 163
+8156  51 164
+8157  40 162
+8158  75 143
+8159  75 155
+8160  40 160
+8161  60  50
+8162  51 156
+8163  12 141
+8164  40 155
+8165  40 145
+8166  40  54
+8168 173 143
+8169  12 155
+8170  40 144
+8171  40 124
+8172  40 141
+8173  40 142
+8174  40 154
+8175  40 145
+8176 162 133
+8177 145 151
+8178 164 135
+8179 165  56
+8180 162 143
+8181 156 155
+8182  40 144
+8183 151 116
+8184  73 141
+8185  12 155
+8186  40 145
+8187  40  51
+8189  40  75
+8190 175  75
+8191  12  40
+8192  40  60
+8193  40  12
+8194 175  11
+8195  12  46
+8196  40  46
+8198 162 163
+8199 145 164
+8200 164 162
+8201 165 143
+8202 162 155
+8203 156 160
+8204  40  50
+8205  55 141
+8206  61 162
+8207  73 147
+8208  12 164
+8209 175 171
+8210  12 160
+8211  12 145
+8212 166 163
+8213 157  54
+8214 151  40
+8215 144 143
+8216  40 155
+8217 157 144
+8218 165 124
+8219 162 141
+8220 147 142
+8221 145 154
+8222 164 145
+8223 163 133
+8224  50 151
+8225 143 135
+8226 150  56
+8229  40 147
+8230  52 163
+8231 142 122
+8232 165 145
+8233 146 161
+8234  51 165
+8235  12 151
+8236 173 162
+8237  12 145
+8238  40 144
+8239  40  51
+8240 146  40
+8241 147  75
+8242 145  75
+8243 164  40
+8244 163  60
+8245  50  51
+8246 142  40
+8247 165 173
+8248 146  12
+8249  54  40
+8251  61  40
+8252  60  40
+8253  62  40
+8254  64  40
+8255  54 162
+8256  40 145
+8257 163 164
+8258 164 165
+8259 144 162
+8260 151 156
+8261 156  40
+8262  51 151
+8267 143  40
+8268 150  40
+8269 141 175
+8270 162  12
+8272  52  40
+8273 160 175
+8274  40  12
+8275  75  40
+8277 151 162
+8278 156 145
+8279 144 164
+8280 145 165
+8281 170 162
+8282  50 156
+8283 142  40
+8284 165  55
+8285 146  61
+8286  54  73
+8287  40  12
+8288  47 175
+8289 134  12
+8290 156  12
+8291  47 166
+8292  51 157
+8293  73 151
+8294  12 144
+8296  40 157
+8297 151 165
+8298 146 162
+8299  40 147
+8300  50 145
+8301 160 164
+8302  51 163
+8303  12  50
+8304  40 143
+8305  40 150
+8306  40 141
+8307  40 162
+8308  52  40
+8309 160  52
+8310  40 142
+8311  75 165
+8312  40 146
+8313  60  51
+8314  73  40
+8315  12 173
+8316 175  12
+8317  12  40
+8318  12  40
+8319 151 146
+8320 156 147
+8321 164 145
+8322  40 164
+8323 155 163
+8324 141  50
+8325 151 142
+8326 156 165
+8327  50 146
+8328  51  54
+8329  12  40
+8330 173  61
+8331  12  60
+8332  40  62
+8333  40  64
+8334 143  54
+8335 150  40
+8336 141 163
+8337 162 164
+8338  40 144
+8339 142 151
+8340 165 156
+8341 146  51
+8342 133  73
+8343  61  12
+8344  60  40
+8345  62  40
+8346  64 143
+8347 135 150
+8348  73 141
+8349  40 162
+8350  57  40
+8351  57  52
+8353 142 160
+8354 145  40
+8355 164  75
+8356 164  40
+8357 145 151
+8358 162 156
+8359  40 144
+8360 156 145
+8361 157 170
+8362 164  50
+8363  40 142
+8364 164 165
+8365 171 146
+8366 160  54
+8367 145  40
+8368  40  47
+8369 154 134
+8370 157 156
+8371 156  47
+8372 147  51
+8373 145  73
+8374 162  12
+8376 164  40
+8377 150 151
+8378 141 146
+8379 156  40
+8380  40  50
+8381  61 160
+8382  60  51
+8383  62  40
+8384  63  52
+8385  40 160
+8386 143  40
+8387 150  75
+8388 141  40
+8389 162  60
+8390 163  73
+8392  12 175
+8393  40  12
+8394  40  12
+8395 165 151
+8396 163 156
+8397 141 164
+8398 147  40
+8399 145 155
+8400  50 141
+8401  51 151
+8402  73 156
+8403  12  50
+8404  40  51
+8405  40  12
+8406 146 173
+8407 157  12
+8408 162  40
+8410  50 143
+8411  73 150
+8412  73 141
+8413  51 162
+8414  12  40
+8415  40 142
+8416  40 165
+8417 173 146
+8418  12 133
+8419  40  61
+8420  40  60
+8421  40  62
+8422  40  64
+8423  52 135
+8424 142  73
+8425 165  11
+8426 146  11
+8427  40  57
+8428  75  57
+8430  60 142
+8431  73 145
+8432  40 164
+8433  40 164
+8434  40 145
+8435  40 162
+8437  40 156
+8438  40 157
+8439  40 164
+8441  40 164
+8442  40 171
+8443  40 160
+8444  40 145
+8446  40 154
+8447  57 157
+8448  57 156
+8449  40 147
+8450 143 145
+8451 154 162
+8452 145  40
+8453 141 164
+8454 162 150
+8455  40 141
+8456 157 156
+8457 154  40
+8458 144  61
+8459  40  60
+8460 151  62
+8461 156  63
+8462 160  40
+8463 165 143
+8464 164 150
+8465  12 141
+8466  40 162
+8467  40 163
+8468  40  12
+8469  40  12
+8470 160  40
+8471 162  40
+8472 151 165
+8473 156 163
+8474 164 141
+8475 146 147
+8476  50 145
+8477  42  50
+8478  45  51
+8479 163  73
+8480  42  12
+8481  54  40
+8483  42 146
+8484 163 157
+8485 150 162
+8486  63  40
+8487  63  50
+8488  45  73
+8489  40  73
+8490  42  51
+8491  51  40
+8492  73 173
+8493  40  12
+8494  57  40
+8495  57  40
+8497 160  40
+8498 162  52
+8499 157 142
+8500 155 165
+8501 160 146
+8502 164  40
+8503  12  75
+8505  40  60
+8506  40  73
+8507  40  11
+8508 157  11
+8509 165  11
+8510 162  57
+8511 147  57
+8512 145  40
+8513 164 143
+8514 163 154
+8515  50 145
+8516 142 141
+8517 165 162
+8518 146  40
+8519  51 157
+8520  73 154
+8521  12 144
+8523  40 151
+8524  40 156
+8525  40 160
+8526 160 165
+8527 162 164
+8528 151  12
+8529 156  40
+8530 164  40
+8531 146  40
+8532  50  40
+8533  42 160
+8534 143 162
+8535 155 151
+8536 144 156
+8537  40 164
+8538 133 146
+8539  45  50
+8540 163  42
+8541 135  45
+8542 134 163
+8543 156  42
+8544  42  54
+8545  54  40
+8546  40  42
+8547 142 163
+8548 165 150
+8549 146  63
+8550  51  63
+8551  73  45
+8553  57  42
+8554  57  51
+8555  40  73
+8556 152  11
+8557 165  57
+8558 163  57
+8559 164  40
+8560  40 160
+8561 160 162
+8562 162 157
+8563 151 155
+8564 156 160
+8566  40  12
+8567 157  40
+8568 165  40
+8569 164  40
+8571 167 157
+8572 150 165
+8573 141 162
+8574 164 147
+8575  40 145
+8576 167 164
+8577 145 163
+8578  40  50
+8579 147 142
+8580 157 165
+8581 164 146
+8582  40  51
+8583 141  73
+8584 163  12
+8585  55  40
+8586 151  40
+8587 163  40
+8588  12  40
+8589  40 160
+8590  40 162
+8591  40 151
+8592  40 156
+8593 151 164
+8595  40  50
+8596  50  42
+8597 142 143
+8598 165 155
+8599 146 144
+8600 133  40
+8601  60 133
+8602 135  45
+8603  40 163
+8604  75 135
+8605  75 134
+8606  40 156
+8607  60  42
+8608  51  54
+8609  12  40
+8610  40 142
+8611  40 165
+8612  40 146
+8613  40  51
+8614  40  73
+8615  40  11
+8616 143  57
+8617 157  57
+8618 156  40
+8619 164 152
+8620 151 165
+8621 156 163
+8622 165 164
+8623 145  40
+8624  73 160
+8625  12 162
+8626  40 151
+8627  40 156
+8628  40 164
+8630 151 157
+8631 146 165
+8632  40 164
+8633  50  40
+8634 142 167
+8635 165 150
+8636 146 141
+8637 133 164
+8638  60  40
+8639 135 167
+8640  40 145
+8641  75  40
+8642  75 147
+8643  40 157
+8644  47 164
+8645  43  40
+8646  47 141
+8647  51 163
+8648  12  55
+8649  40 151
+8650  40 163
+8651  40  12
+8655 143  40
+8656 157 151
+8657 156 146
+8658 164  40
+8659 151  50
+8660 156 142
+8662 145 146
+8663  73 133
+8664  40  60
+8665  40 135
+8667  40  75
+8668  40  75
+8670  40  60
+8671  40  51
+8672  57  12
+8673  57  40
+8675 164  40
+8676 150  40
+8677 151  40
+8678 163  40
+8679  40 143
+8680 151 157
+8681 163 156
+8682  40 164
+8683 141 151
+8684  40 156
+8685 143 165
+8686 157 145
+8687 155  73
+8688 155  12
+8689 145  40
+8690 156  40
+8691 164  40
+8693 154 151
+8694 151 146
+8695 156  40
+8696 145  50
+8697  54 142
+8698  40 165
+8699 144 146
+8700 157 133
+8701  40  60
+8702 156 135
+8703 157  40
+8704 164  75
+8705 150  75
+8706 151  40
+8707 156  47
+8708 147  43
+8709  12  47
+8710  40  51
+8711  40  12
+8714 151  40
+8715 146  40
+8717  50  40
+8718 142 143
+8719 165 157
+8720 146 156
+8721 133 164
+8722  60 151
+8723 135 156
+8724  40 165
+8725  75 145
+8726  75  73
+8727  40  11
+8728  47  11
+8729  41  11
+8730  47  57
+8731  51  57
+8733  57 164
+8734  57 150
+8735  40 151
+8736 142 163
+8737 145  40
+8738 147 151
+8739 151 163
+8740 156  40
+8741 163 141
+8743 167 143
+8744 151 157
+8745 164 155
+8746 150 155
+8747  40 145
+8748  41 156
+8749  54 164
+8751 145 154
+8752 170 151
+8753 145 156
+8754 143 145
+8755 165  54
+8756 164  40
+8757 145 144
+8758  40 157
+8759 151  40
+8760 164 156
+8761  40 157
+8762 141 164
+8763 163 150
+8764  12 151
+8765  40 156
+8766  40 147
+8767  40  12
+8771 163  40
+8772 171 151
+8773 163 146
+8774 164  40
+8775 145  50
+8776 155 142
+8777  50 165
+8778 142 146
+8779 165 133
+8780 146  60
+8781  40 135
+8782  53  40
+8783  40  75
+8784  61  75
+8785  51  40
+8786  73  47
+8787  40  41
+8788  57  47
+8789  57  51
+8790  40  11
+8791 141  11
+8792  40  57
+8793 156  57
+8794 157  40
+8795 162 142
+8796 155 145
+8797 141 147
+8798 154 151
+8799  40 156
+8801 150  40
+8802 145 167
+8803 154 151
+8804 154 164
+8805  40 150
+8806 143  40
+8807 155  41
+8808 144  54
+8809  12  40
+8810  40 145
+8811  40 170
+8812  40 145
+8813  40 143
+8814 145 165
+8815 154 164
+8816 163 145
+8817 145  40
+8818  12 151
+8819  40 164
+8821  40 141
+8822  40 163
+8823 173  12
+8824  12  40
+8830  40 163
+8831 163 171
+8832 145 163
+8834 101 145
+8835 162 155
+8836 147  50
+8837 163 142
+8838 107 165
+8839 151 146
+8840 166  40
+8841 145  53
+8842 156  40
+8843  50  61
+8844 142  51
+8845 165  73
+8846 146  11
+8847  54  11
+8848  40  57
+8849 141  57
+8850 162  40
+8851 147 141
+8852  54  40
+8853  40 156
+8854 164 157
+8855 171 162
+8856 160 155
+8857 145 141
+8858 163 154
+8859  54  40
+8860  40 163
+8861 156 150
+8862 101 145
+8863 162 154
+8864 147 154
+8865 163  40
+8866 115 143
+8867 141 155
+8868 170 144
+8869  51  12
+8870  73  40
+8871  12  40
+8874  40 145
+8875  40 154
+8876  40 163
+8877  40 145
+8878 151  40
+8879 156 173
+8880 164  12
+8882 153  40
+8884  75  40
+8886 146  40
+8887 151 163
+8888 156 145
+8889 144 164
+8890 103 101
+8891 155 162
+8892 144 147
+8893  50 163
+8894 142 107
+8895 165 151
+8896 146 166
+8897  54 145
+8898  40 156
+8899 164  50
+8900 171 142
+8901 160 165
+8902 145 146
+8903 163  54
+8904  51  40
+8905  73 141
+8906  12 162
+8907  40 147
+8908  40  54
+8910  40 164
+8911  40 171
+8912  40 160
+8913 151 145
+8914 146 163
+8915  40  54
+8916  50  40
+8917 153 156
+8918  40 101
+8919  76 162
+8920  75 147
+8921  40 163
+8922  60 115
+8923  51 141
+8924  12 170
+8925  40  51
+8926  40  73
+8927  40  12
+8933 151  40
+8934 156 151
+8935 166 156
+8936 157 164
+8937 153  40
+8938 145 153
+8939 103  40
+8940 155  75
+8941 144  40
+8942  50 146
+8943 153 151
+8944  54 156
+8945  40 144
+8946 141 103
+8947 162 155
+8948 147 144
+8949  51  50
+8950  73 142
+8951  12 165
+8952  40 146
+8953  40  54
+8955  40 164
+8956  40 171
+8957  40 160
+8959 154 163
+8960 163  51
+8961 145  73
+8969  40 151
+8970  40 146
+8971 165  40
+8972 163  50
+8973 141 153
+8974 147  40
+8975 145  76
+8976  50  75
+8977  51  40
+8978  73  60
+8979  12  51
+8980  40  12
+8981  40  11
+8982  40 151
+8983  40 156
+8984 175 166
+8985  12 157
+8986  40 153
+8987  40 145
+8988 175 103
+8989  12 155
+8990 175 144
+8991  12  50
+8992  12 153
+8993  57  54
+8994  57  40
+8995  40 141
+8996  55 162
+8997 145 147
+8998 157  51
+8999 146  73
+9000  55  12
+9001  12  40
+cmp: EOF on shell.cpp after byte 9001
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ cmp shell.cpp shell.cpp~ -l[Kb
+[?2004lshell.cpp shell.cpp~ differ: byte 159, line 10 is 146 f  40  
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ df -h
+[?2004lFilesystem      Size  Used Avail Use% Mounted on
+tmpfs           336M  984K  335M   1% /run
+/dev/sda1        31G  2.1G   29G   7% /
+tmpfs           1.2G     0  1.2G   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+/dev/sda15      105M  6.1M   99M   6% /boot/efi
+tmpfs           231M  4.0K  231M   1% /run/user/1000
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ du
+du        dumpe2fs  dumpkeys  
+]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ du 
+.gitignore      directory.cpp   fs33types.hpp   shell.cpp       typescript
+Makefile        diskParams.dat  inodes.cpp      shell.cpp~      user.cpp
+bitvector.cpp   file.cpp        mount.cpp       simdisk.cpp     volume.cpp
+]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ du 
+.gitignore      directory.cpp   fs33types.hpp   shell.cpp       typescript
+Makefile        diskParams.dat  inodes.cpp      shell.cpp~      user.cpp
+bitvector.cpp   file.cpp        mount.cpp       simdisk.cpp     volume.cpp
+]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ du 
+[?2004l100	.
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ du -a
+[?2004l8	./fs33types.hpp
+4	./mount.cpp
+4	./.gitignore
+8	./volume.cpp
+4	./typescript
+4	./user.cpp
+8	./directory.cpp
+12	./shell.cpp~
+4	./diskParams.dat
+8	./inodes.cpp
+4	./bitvector.cpp
+8	./file.cpp
+4	./Makefile
+4	./simdisk.cpp
+12	./shell.cpp
+100	.
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ emacs
+[?2004lCommand 'emacs' not found, but can be installed with:
+sudo snap install emacs        # version 29.1, or
+sudo apt  install emacs-gtk    # version 1:27.1+1-3ubuntu5.1
+sudo apt  install emacs-lucid  # version 1:27.1+1-3ubuntu5.1
+sudo apt  install emacs-nox    # version 1:27.1+1-3ubuntu5.1
+sudo apt  install e3           # version 1:2.82+dfsg-2
+sudo apt  install jove         # version 4.17.3.6-2
+See 'snap info emacs' for additional versions.
+[?2004h]0;adrienabbey@ceg4350: ~/ceg4350-project1/P0-2020-Fall[01;32madrienabbey@ceg4350[00m:[01;34m~/ceg4350-project1/P0-2020-Fall[00m$ exit
+[?2004lexit
+
+Script done on 2023-09-15 15:51:12-04:00 [COMMAND_EXIT_CODE="127"]
