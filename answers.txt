@@ -1,0 +1,22 @@
+Project 1 answers.txt - Adrien Abbey
+
+1: Describing Library Routines
+    dup2: This will duplicate a file descriptor (an integer in the kernel that 
+        points to a file) between two specified file descriptors; for example, 
+        this can be used to append stdout messages to a file.
+    creat: This will create a new file that can be written to; if the file 
+        exists, it will be truncated to 0 length.
+    pipe: This will create a pipe between two processes, allowing them to 
+        communicate; this is very similar to piping in bash, where output from 
+        one command will pipe as input to another.
+    fork: Creates a new process (child), which is a copy of the current 
+        process (parent); these can share some resources with each other.
+    pthread_create: Creates a new thread that executes a specified function; 
+        this is useful for modern CPUs that can run multiple threads at once.
+    system: Executes the given shell command; this is done as a child process 
+        created with fork.
+    printf: Prints the provided string to stdout; this is useful for console 
+        processes as a means to display output to users.
+
+2: Last line of invokeCmd:
+    
