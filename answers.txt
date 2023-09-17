@@ -19,4 +19,7 @@ Project 1 answers.txt - Adrien Abbey
         processes as a means to display output to users.
 
 2: Last line of invokeCmd:
-    
+    The invokeCmd checks to ensure that the required arguments are given.  If 
+        these checks pass, the final line in invokeCmd will pass the given 
+        arguments to the relevant function relating to the given command, as 
+        defined by cmdTable.
