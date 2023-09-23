@@ -4,6 +4,8 @@
  */
 
 #include "fs33types.hpp"
+#include <iostream>
+#include <string>
 
 extern MountEntry *mtab;
 extern VNIN cwdVNIN;
@@ -390,18 +392,21 @@ bool checkRedirect(char *str)
   return false;
 }
 
-void getRedirectFile(char *inputStr, char *outputStr)
+std::string getRedirectFile(char *str)
 {
   // My method to extract the file name from the given string.
   // Search for the `>` character, then return a new string containing every
   // character after that: https://cplusplus.com/reference/cstring/strtok/
 
   // Tokenize the given string:
-  outputStr = strtok(inputStr, ">");
-  printf("Command string is: \"%s\"\n", outputStr);
+  std::string returnString = strtok(str, ">");
+  printf("Command string is: \"%s\"\n", returnString);
+
   // Do this twice to get the file name:
-  outputStr = strtok(NULL, ">");
-  printf("File name is: \"%s\"\n", outputStr);
+  returnString = strtok(NULL, ">");
+  printf("File name is: \"%s\"\n", returnString);
+
+  return returnString;
 }
 
 int main()
@@ -432,8 +437,7 @@ int main()
         // https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
 
         // First I need to get the filename from the string:
-        char fileName[1024];
-        getRedirectFile(buf, fileName);
+        std::string fileName = getRedirectFile(buf);
         printf("Redirect file name is: \"%s\"\n", fileName);
       }
       setArgsGiven(buf, arg, types, nArgsMax);
