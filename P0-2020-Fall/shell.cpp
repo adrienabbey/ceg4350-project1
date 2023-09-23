@@ -369,6 +369,39 @@ void ourgets(char *buf)
     *p = 0;
 }
 
+bool checkRedirect(char *str)
+{
+  // My method to check for a redirect character in the input string.
+  // Return true if the `>` character exists in the string.
+
+  // Since we're using character arrays, I need a way to find the size of a
+  // given char array: https://stackoverflow.com/a/4180826
+
+  // Test code:
+  printf("Char array size: %lu\n", strlen(str));
+
+  for (long unsigned int i = 0; i < strlen(str); i++)
+  {
+    if (str[i] == '>')
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+void getRedirectFile(char *inputStr, char *outputStr)
+{
+  // My method to extract the file name from the given string.
+  // Search for the `>` character, then return a new string containing every
+  // character after that: https://cplusplus.com/reference/cstring/strtok/
+
+  // Tokenize the given string:
+  outputStr = strtok(inputStr, ">");
+  // Do this twice to get the file name:
+  outputStr = strtok(NULL, ">");
+}
+
 int main()
 {
   char buf[1024]; // better not type longer than 1023 chars
@@ -388,6 +421,19 @@ int main()
       system(buf + 1); // a normal shell cmd
     else
     {
+      // Check to see if it's a redirect:
+      bool isRedirect = checkRedirect(buf);
+      if (isRedirect)
+      {
+        // I need to redirect `stdout` to the given file name.
+        // To do this, I can use `dup2` to do this:
+        // https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
+
+        // First I need to get the filename from the string:
+        char fileName[1024];
+        getRedirectFile(buf, fileName);
+        printf("Redirect file name is: %s\n", fileName);
+      }
       setArgsGiven(buf, arg, types, nArgsMax);
       int k = findCmd(buf, types);
       if (k >= 0)
