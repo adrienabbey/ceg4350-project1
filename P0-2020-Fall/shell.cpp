@@ -398,8 +398,10 @@ void getRedirectFile(char *inputStr, char *outputStr)
 
   // Tokenize the given string:
   outputStr = strtok(inputStr, ">");
+  printf("Command string is: \"%s\"\n", outputStr);
   // Do this twice to get the file name:
   outputStr = strtok(NULL, ">");
+  printf("File name is: \"%s\"\n", outputStr);
 }
 
 int main()
@@ -432,7 +434,7 @@ int main()
         // First I need to get the filename from the string:
         char fileName[1024];
         getRedirectFile(buf, fileName);
-        printf("Redirect file name is: %s\n", fileName);
+        printf("Redirect file name is: \"%s\"\n", fileName);
       }
       setArgsGiven(buf, arg, types, nArgsMax);
       int k = findCmd(buf, types);
