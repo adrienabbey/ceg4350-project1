@@ -406,6 +406,13 @@ std::string getRedirectFile(char *str)
   returnString = strtok(NULL, ">");
   // std::cout << "File name is: " << returnString << "\n";
 
+  // If the first character of the string is a space, remove that:
+  // https://stackoverflow.com/a/23834717
+  if (returnString[0] == ' ')
+  {
+    returnString.erase(0, 1);
+  }
+
   return returnString;
 }
 
@@ -438,20 +445,36 @@ int main()
 
         // First I need to get the filename from the string:
         std::string fileName = getRedirectFile(buf);
-        // std::cout << "Redirect file name is: " << fileName << "\n";
+        std::cout << "Redirect file name is: \"" << fileName.c_str() << "\"\n";
 
         // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
         int fileDescriptor = open(fileName.c_str(), O_WRONLY);
 
-        // Redirect `stdout` to the given file:
-        dup2(fileDescriptor, 1);
+        // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
+        dup2(fileDescriptor, STDOUT_FILENO);
+        // test:
+        printf("Hello world!");
+
+        // Copy of original command handler from below:
+        setArgsGiven(buf, arg, types, nArgsMax);
+        int k = findCmd(buf, types);
+        if (k >= 0)
+          invokeCmd(k, arg);
+        else
+          usage();
+
+        // Close the file?
+        close(fileDescriptor);
       }
-      setArgsGiven(buf, arg, types, nArgsMax);
-      int k = findCmd(buf, types);
-      if (k >= 0)
-        invokeCmd(k, arg);
       else
-        usage();
+      {
+        setArgsGiven(buf, arg, types, nArgsMax);
+        int k = findCmd(buf, types);
+        if (k >= 0)
+          invokeCmd(k, arg);
+        else
+          usage();
+      }
     }
   }
 }
