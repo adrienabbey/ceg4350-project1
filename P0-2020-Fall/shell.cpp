@@ -380,7 +380,7 @@ bool checkRedirect(char *str)
   // given char array: https://stackoverflow.com/a/4180826
 
   // Test code:
-  printf("Char array size: %lu\n", strlen(str));
+  // printf("Char array size: %lu\n", strlen(str));
 
   for (long unsigned int i = 0; i < strlen(str); i++)
   {
@@ -400,11 +400,11 @@ std::string getRedirectFile(char *str)
 
   // Tokenize the given string:
   std::string returnString = strtok(str, ">");
-  printf("Command string is: \"%s\"\n", returnString);
+  // std::cout << "Command string is: " << returnString << "\n";
 
   // Do this twice to get the file name:
   returnString = strtok(NULL, ">");
-  printf("File name is: \"%s\"\n", returnString);
+  // std::cout << "File name is: " << returnString << "\n";
 
   return returnString;
 }
@@ -438,7 +438,13 @@ int main()
 
         // First I need to get the filename from the string:
         std::string fileName = getRedirectFile(buf);
-        printf("Redirect file name is: \"%s\"\n", fileName);
+        // std::cout << "Redirect file name is: " << fileName << "\n";
+
+        // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
+        int fileDescriptor = open(fileName.c_str(), O_WRONLY);
+
+        // Redirect `stdout` to the given file:
+        dup2(fileDescriptor, 1);
       }
       setArgsGiven(buf, arg, types, nArgsMax);
       int k = findCmd(buf, types);
