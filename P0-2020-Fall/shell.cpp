@@ -448,7 +448,11 @@ int main()
         std::cout << "Redirect file name is: \"" << fileName.c_str() << "\"\n";
 
         // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
-        int fileDescriptor = open(fileName.c_str(), O_WRONLY);
+        // https://stackoverflow.com/a/35186153
+        int fileDescriptor = open(fileName.c_str(), O_WRONLY | O_CREAT, 0644);
+
+        // Save original stdout: https://stackoverflow.com/a/11042581
+        int savedStdout = dup(STDOUT_FILENO);
 
         // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
         dup2(fileDescriptor, STDOUT_FILENO);
@@ -463,8 +467,9 @@ int main()
         else
           usage();
 
-        // Close the file?
-        close(fileDescriptor);
+        // Restore `stdout`:
+        dup2(savedStdout, STDOUT_FILENO);
+        close(savedStdout);
       }
       else
       {
