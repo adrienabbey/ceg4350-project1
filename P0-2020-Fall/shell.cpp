@@ -445,7 +445,7 @@ int main()
 
         // First I need to get the filename from the string:
         std::string fileName = getRedirectFile(buf);
-        std::cout << "Redirect file name is: \"" << fileName.c_str() << "\"\n";
+        // std::cout << "Redirect file name is: \"" << fileName.c_str() << "\"\n";
 
         // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
         // https://stackoverflow.com/a/35186153
@@ -457,7 +457,7 @@ int main()
         // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
         dup2(fileDescriptor, STDOUT_FILENO);
         // test:
-        printf("Hello world!");
+        // printf("Hello world!");
 
         // Copy of original command handler from below:
         setArgsGiven(buf, arg, types, nArgsMax);
