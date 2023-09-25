@@ -6,6 +6,7 @@
 #include "fs33types.hpp"
 #include <iostream>
 #include <string>
+#include <vector>
 
 extern MountEntry *mtab;
 extern VNIN cwdVNIN;
@@ -392,6 +393,21 @@ bool checkRedirect(char *str)
   return false;
 }
 
+bool checkPipe(char *str)
+{
+  // My method to check for a pipe character in the input string.
+  // Return true if the `|` character exists in the string.
+
+  for (long unsigned int i = 0; i < strlen(str); i++)
+  {
+    if (str[i] == '|')
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string getRedirectFile(char *str)
 {
   // My method to extract the file name from the given string.
@@ -414,6 +430,19 @@ std::string getRedirectFile(char *str)
   }
 
   return returnString;
+}
+
+void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
+{
+  // Split the given string into multiple commands.
+  // This is NOT for bonus points.
+  // Assumes only two commands with valid formatting.
+
+  // Pull the first command from the string:
+  firstCmd = strtok(buf, "|");
+
+  // Pull the second:
+  secondCmd = strtok(NULL, "|");
 }
 
 int main()
@@ -467,6 +496,22 @@ int main()
         dup2(savedStdout, STDOUT_FILENO);
         close(savedStdout);
       }
+
+      // Check to see if the input contains piped commands:
+      if (checkPipe(buf))
+      {
+        // NOTE: This is NOT for bonus points (yet).
+        // For piped commands, I first need to split the input string into
+        // multiple commands:
+
+        // Prep the vars:
+        char firstCmd[512];  // 512 is safe, right?
+        char secondCmd[512]; // Right?
+
+        // Split the input:
+        splitPipeString(buf, firstCmd, secondCmd);
+      }
+
       else
       {
         setArgsGiven(buf, arg, types, nArgsMax);
