@@ -1,12 +1,14 @@
 /*
  * shell.C -- CEG433 File Sys Project shell
  * pmateti@wright.edu
+ *
+ * Modified for Project 1 of CEG-4350
+ * by Adrien Abbey, Sept. 2023
  */
 
 #include "fs33types.hpp"
 #include <iostream>
 #include <string>
-#include <vector>
 
 extern MountEntry *mtab;
 extern VNIN cwdVNIN;
@@ -443,6 +445,9 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
 
   // Pull the second:
   secondCmd = strtok(NULL, "|");
+
+  // Strip `!' and ' ' from the beginning of each string:
+  // TODO: FIXME!
 }
 
 int main()
@@ -500,7 +505,10 @@ int main()
       // Check to see if the input contains piped commands:
       if (checkPipe(buf))
       {
-        // NOTE: This is NOT for bonus points (yet).
+        // Re-reading the instructions, this is actually a lot easier than I
+        // was expecting: I only need to handle host commands!  I don't need
+        // to concern myself with project shell commands.
+
         // For piped commands, I first need to split the input string into
         // multiple commands:
 
@@ -510,6 +518,12 @@ int main()
 
         // Split the input:
         splitPipeString(buf, firstCmd, secondCmd);
+
+        // Execute the first command, saving the output:
+        FILE *output = popen(firstCmd + 1, "r");
+
+        // Do something to run the second command, using the output of the first as arguments?
+        // Better yet, what about a `<` redirect?
       }
 
       else
