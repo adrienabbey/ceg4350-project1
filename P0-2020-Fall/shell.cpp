@@ -480,25 +480,44 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
   // Assumes only two commands with valid formatting.
 
   // TESTCODE:
-  printf("  Command given to split: %s\n", buf);
+  // printf("  Command given to split: %s\n", buf);
+
+  // https://stackoverflow.com/a/49698596
+  // I made the mistake of forgetting how pointers and shallow copies work.
 
   // Pull the first command from the string:
-  firstCmd = strtok(buf, "|");
+  std::string firstCmdTemp = strtok(buf, "|");
 
   // TESTCODE:
-  printf("  firstCmd: %s\n", firstCmd);
+  // printf("  firstCmd: %s\n", firstCmdTemp.c_str());
 
   // Pull the second:
-  secondCmd = strtok(NULL, "|");
+  std::string secondCmdTemp = strtok(NULL, "|");
 
   // TESTCODE:
-  printf("  secondCmd: %s\n", secondCmd);
-
-  // NOTE: Do I need to make these null-terminated?
-  // TODO: FIXME!
+  // printf("  secondCmd: %s\n", secondCmdTemp.c_str());
 
   // Strip `!' and ' ' from the beginning of each string:
-  // TODO: FIXME!
+  while (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
+  {
+    if (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
+    {
+      firstCmdTemp.erase(0, 1);
+    }
+  }
+
+  // Strip `!' and ' ' from the beginning of each string:
+  while (secondCmdTemp[0] == ' ' || secondCmdTemp[0] == '!')
+  {
+    if (secondCmdTemp[0] == ' ' || secondCmdTemp[0] == '!')
+    {
+      secondCmdTemp.erase(0, 1);
+    }
+  }
+
+  // Copy the temporary strings to the provided pointers for more permanent results:
+  strcpy(firstCmd, firstCmdTemp.c_str());
+  strcpy(secondCmd, secondCmdTemp.c_str());
 }
 
 void doPipe(char *buf)
@@ -518,8 +537,8 @@ void doPipe(char *buf)
   splitPipeString(buf, firstCmd, secondCmd);
 
   // TESTCODE:
-  printf("  firstCmd: %s\n", firstCmd);
-  printf("  secondCmd: %s\n", secondCmd);
+  // printf("  firstCmd: %s\n", firstCmd);
+  // printf("  secondCmd: %s\n", secondCmd);
 
   // Do stuff?  I'm using the following code from the question as a hint for
   // how to do that: https://stackoverflow.com/q/45202379
@@ -527,7 +546,7 @@ void doPipe(char *buf)
   // Create the necessary variables:
   FILE *outputStream;
   char streamBuffer[BUFSIZ];
-  // char outputString[BUFSIZ];
+  std::string outputString[BUFSIZ];
 
   // Run the first command, grabbing its stdout to a new stream:
   outputStream = popen(firstCmd, "r");
@@ -537,8 +556,14 @@ void doPipe(char *buf)
   while (fgets(streamBuffer, BUFSIZ, outputStream))
   {
     // TESTCODE:
-    puts(streamBuffer);
+    // puts(streamBuffer);
+
+    // Append the output to the command string:
+    outputString->append(streamBuffer);
   }
+
+  // TESTCODE:
+  std::cout << "  Output String: " << outputString << std::endl;
 
   // Close the stream:
   // fclose(outputStream);
