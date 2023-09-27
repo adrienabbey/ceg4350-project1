@@ -450,6 +450,65 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
   // TODO: FIXME!
 }
 
+// My method for executing a redirect:
+void doRedirect(char *buf)
+{
+  // I need to redirect `stdout` to the given file name.
+  // To do this, I can use `dup2`:
+  // https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
+
+  // First I need to get the filename from the string:
+  std::string fileName = getRedirectFile(buf);
+
+  // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
+  // https://stackoverflow.com/a/35186153
+  int fileDescriptor = open(fileName.c_str(), O_WRONLY | O_CREAT, 0644);
+
+  // Save original stdout: https://stackoverflow.com/a/11042581
+  int savedStdout = dup(STDOUT_FILENO);
+
+  // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
+  dup2(fileDescriptor, STDOUT_FILENO);
+
+  // Copy of original command handler from below:
+  doCommand(buf);
+
+  // Restore `stdout`:
+  dup2(savedStdout, STDOUT_FILENO);
+  close(savedStdout);
+}
+
+void doPipe(char *buf)
+{
+  // Re-reading the instructions, this is actually a lot easier than I
+  // was expecting: I only need to handle host commands!  I don't need
+  // to concern myself with project shell commands.
+
+  // For piped commands, I first need to split the input string into
+  // multiple commands:
+
+  // Prep the vars:
+  char firstCmd[BUFSIZ];  // Buffersize matters, apparently:
+  char secondCmd[BUFSIZ]; // https://stackoverflow.com/a/14428470
+
+  // Split the input:
+  splitPipeString(buf, firstCmd, secondCmd);
+
+  // Do stuff?  I'm using the following code from the question as a hint for
+  // how to do that: https://stackoverflow.com/q/45202379
+}
+
+// Copy/paste of provided code to reduce repetition:
+void doCommand(char *buf)
+{
+  setArgsGiven(buf, arg, types, nArgsMax);
+  int k = findCmd(buf, types);
+  if (k >= 0)
+    invokeCmd(k, arg);
+  else
+    usage();
+}
+
 int main()
 {
   char buf[1024]; // better not type longer than 1023 chars
@@ -466,81 +525,34 @@ int main()
     if (buf[0] == '#')
       continue;        // this is a comment line, do nothing
     if (buf[0] == '!') // begins with !, execute it as
-      system(buf + 1); // a normal shell cmd
+    {
+      // Check to see if the input contains piped commands:
+      // Note: The project instructions state:
+      // "Implement piping as discussed in class for commands executed on the host."
+      // I'm interpreting that as meaning that piping will *always* only ever involve host commands starting with '!'
+      if (checkPipe(buf))
+      {
+        // Do that:
+        doPipe(buf);
+      }
+      else
+      {
+        system(buf + 1); // a normal shell cmd}
+      }
+    }
     else
     {
       // Check to see if it's a redirect:
       if (checkRedirect(buf))
       {
-        // I need to redirect `stdout` to the given file name.
-        // To do this, I can use `dup2`:
-        // https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
-
-        // First I need to get the filename from the string:
-        std::string fileName = getRedirectFile(buf);
-
-        // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
-        // https://stackoverflow.com/a/35186153
-        int fileDescriptor = open(fileName.c_str(), O_WRONLY | O_CREAT, 0644);
-
-        // Save original stdout: https://stackoverflow.com/a/11042581
-        int savedStdout = dup(STDOUT_FILENO);
-
-        // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
-        dup2(fileDescriptor, STDOUT_FILENO);
-
-        // Copy of original command handler from below:
-        setArgsGiven(buf, arg, types, nArgsMax);
-        int k = findCmd(buf, types);
-        if (k >= 0)
-          invokeCmd(k, arg);
-        else
-          usage();
-
-        // Restore `stdout`:
-        dup2(savedStdout, STDOUT_FILENO);
-        close(savedStdout);
+        // Do that:
+        doRedirect(buf);
       }
-
-      // Check to see if the input contains piped commands:
-      if (checkPipe(buf))
-      {
-        // Re-reading the instructions, this is actually a lot easier than I
-        // was expecting: I only need to handle host commands!  I don't need
-        // to concern myself with project shell commands.
-
-        // For piped commands, I first need to split the input string into
-        // multiple commands:
-
-        // Prep the vars:
-        char firstCmd[BUFSIZ];  // Buffersize matters, apparently:
-        char secondCmd[BUFSIZ]; // https://stackoverflow.com/a/14428470
-
-        // Split the input:
-        splitPipeString(buf, firstCmd, secondCmd);
-
-        // Execute the first command, saving the output:
-        // https://stackoverflow.com/a/14428470
-        char output[BUFSIZ];
-        freopen("/dev/null", "a", popen(firstCmd + 1, "r"));
-        setbuf(stdout, output);
-
-        // Merge the stuffs:
-        std::string secondCmdComb = secondCmd;
-        secondCmdComb.append(output);
-
-        // Test time:
-        printf("Second command is: %s", secondCmdComb.c_str());
-      }
-
       else
       {
-        setArgsGiven(buf, arg, types, nArgsMax);
-        int k = findCmd(buf, types);
-        if (k >= 0)
-          invokeCmd(k, arg);
-        else
-          usage();
+        // Note: I moved the code that was here into another function so I can
+        // reuse it elsewhere, reducing code repetition:
+        doCommand(buf);
       }
     }
   }
