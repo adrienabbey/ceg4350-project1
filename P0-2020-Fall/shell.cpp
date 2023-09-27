@@ -545,6 +545,9 @@ void doPipe(char *buf)
 
   pid_t p; // Tracks the process identifiers used by fork().
 
+  // Create the pipe:
+  pipe(cmdPipe);
+
   // Fork this process:
   p = fork();
 
@@ -573,11 +576,6 @@ void doPipe(char *buf)
     // Read the output of the parent process to a string:
     char outputStr[BUFSIZ];
     read(cmdPipe[0], outputStr, BUFSIZ);
-
-    // FIXME:  Do more.
-
-    // TEST:
-    printf("  The child process read: %s\n", outputStr);
 
     // Close both ends of the pipe:
     close(cmdPipe[0]);
