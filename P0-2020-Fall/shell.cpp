@@ -536,46 +536,56 @@ void doPipe(char *buf)
   // Split the input:
   splitPipeString(buf, firstCmd, secondCmd);
 
-  // TESTCODE:
-  // printf("  firstCmd: %s\n", firstCmd);
-  // printf("  secondCmd: %s\n", secondCmd);
+  // I'm hopelessly lost and overly dependent on others for guidance.
+  // https://www.geeksforgeeks.org/c-program-demonstrate-fork-and-pipe/
+  // I'm using the above as a reference guide to figure out how to use forks
+  // and pipes.
 
-  // Do stuff?  I'm using the following code from the question as a hint for
-  // how to do that: https://stackoverflow.com/q/45202379
+  int cmdPipe[2]; // I only need to send data to the child process.
 
-  // Create the necessary variables:
-  FILE *outputStream;
-  // char streamBuffer[BUFSIZ];
-  // std::string outputString[BUFSIZ];
+  pid_t p; // Tracks the process identifiers used by fork().
 
-  // Run the first command on the host, grabbing its stdout to a new stream:
-  outputStream = popen(firstCmd, "r");
+  // Fork this process:
+  p = fork();
 
-  // Convert that stream into a character array.
-  // https://cplusplus.com/reference/cstdio/fgets/
-  // while (fgets(streamBuffer, BUFSIZ, outputStream))
-  // {
-  //   // TESTCODE:
-  //   // puts(streamBuffer);
-
-  //   // Append the output to the command string:
-  //   outputString->append(streamBuffer);
-  // }
-
-  // https://stackoverflow.com/a/10668015
-  char line[BUFSIZ];
-  std::string outputString;
-
-  while (fgets(line, BUFSIZ, outputStream))
+  // If this is the parent process:
+  if (p > 0)
   {
-    outputString += line;
+    // Close the read pipe:
+    // close(cmdPipe[0]);
+
+    // Run the command, saving its output to a stream:
+    FILE *firstOutput = popen(firstCmd, "r");
+
+    // Write the output of the first command to the child process:
+    // I don't know if size matters?
+    write(cmdPipe[1], firstOutput, BUFSIZ);
+
+    // Close the write pipe:
+    close(cmdPipe[1]);
   }
+  // Child process:
+  else
+  {
+    // Close the writing end of the pipe:
+    close(cmdPipe[1]);
 
-  // TESTCODE:
-  std::cout << "  Output String: " << outputString << std::endl;
+    // Read the output of the parent process to a string:
+    char outputStr[BUFSIZ];
+    read(cmdPipe[0], outputStr, BUFSIZ);
 
-  // Close the stream:
-  // fclose(outputStream);
+    // FIXME:  Do more.
+
+    // TEST:
+    printf("  The child process read: %s\n", outputStr);
+
+    // Close both ends of the pipe:
+    close(cmdPipe[0]);
+    close(cmdPipe[1]);
+
+    // Close the child process:
+    exit(0);
+  }
 }
 
 int main()
