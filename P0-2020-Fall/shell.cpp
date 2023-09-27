@@ -374,6 +374,17 @@ void ourgets(char *buf)
     *p = 0;
 }
 
+// Copy/paste of provided code from main method to reduce repetition:
+void doCommand(char *buf)
+{
+  setArgsGiven(buf, arg, types, nArgsMax);
+  int k = findCmd(buf, types);
+  if (k >= 0)
+    invokeCmd(k, arg);
+  else
+    usage();
+}
+
 bool checkRedirect(char *str)
 {
   // My method to check for a redirect character in the input string.
@@ -496,17 +507,25 @@ void doPipe(char *buf)
 
   // Do stuff?  I'm using the following code from the question as a hint for
   // how to do that: https://stackoverflow.com/q/45202379
-}
 
-// Copy/paste of provided code to reduce repetition:
-void doCommand(char *buf)
-{
-  setArgsGiven(buf, arg, types, nArgsMax);
-  int k = findCmd(buf, types);
-  if (k >= 0)
-    invokeCmd(k, arg);
-  else
-    usage();
+  // Create the necessary variables:
+  FILE *outputStream;
+  char streamBuffer[BUFSIZ];
+  std::string outputString;
+
+  // Run the first command, grabbing its stdout to a new stream:
+  outputStream = popen(firstCmd, "r");
+
+  // Convert that stream into a character array.
+  // Use fgets to fill a character buffer from the output stream:
+  while (fgets(streamBuffer, BUFSIZ, outputStream))
+  {
+    // Append the buffer to the output string:
+    outputString += streamBuffer;
+  }
+
+  // TESTCODE, PLZ IGNORE:
+  std::cout << outputString << std::endl;
 }
 
 int main()
