@@ -445,22 +445,6 @@ std::string getRedirectFile(char *str)
   return returnString;
 }
 
-void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
-{
-  // Split the given string into multiple commands.
-  // This is NOT for bonus points.
-  // Assumes only two commands with valid formatting.
-
-  // Pull the first command from the string:
-  firstCmd = strtok(buf, "|");
-
-  // Pull the second:
-  secondCmd = strtok(NULL, "|");
-
-  // Strip `!' and ' ' from the beginning of each string:
-  // TODO: FIXME!
-}
-
 // My method for executing a redirect:
 void doRedirect(char *buf)
 {
@@ -489,6 +473,34 @@ void doRedirect(char *buf)
   close(savedStdout);
 }
 
+void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
+{
+  // Split the given string into multiple commands.
+  // This is NOT for bonus points.
+  // Assumes only two commands with valid formatting.
+
+  // TESTCODE:
+  printf("  Command given to split: %s\n", buf);
+
+  // Pull the first command from the string:
+  firstCmd = strtok(buf, "|");
+
+  // TESTCODE:
+  printf("  firstCmd: %s\n", firstCmd);
+
+  // Pull the second:
+  secondCmd = strtok(NULL, "|");
+
+  // TESTCODE:
+  printf("  secondCmd: %s\n", secondCmd);
+
+  // NOTE: Do I need to make these null-terminated?
+  // TODO: FIXME!
+
+  // Strip `!' and ' ' from the beginning of each string:
+  // TODO: FIXME!
+}
+
 void doPipe(char *buf)
 {
   // Re-reading the instructions, this is actually a lot easier than I
@@ -505,27 +517,31 @@ void doPipe(char *buf)
   // Split the input:
   splitPipeString(buf, firstCmd, secondCmd);
 
+  // TESTCODE:
+  printf("  firstCmd: %s\n", firstCmd);
+  printf("  secondCmd: %s\n", secondCmd);
+
   // Do stuff?  I'm using the following code from the question as a hint for
   // how to do that: https://stackoverflow.com/q/45202379
 
   // Create the necessary variables:
   FILE *outputStream;
   char streamBuffer[BUFSIZ];
-  std::string outputString;
+  // char outputString[BUFSIZ];
 
   // Run the first command, grabbing its stdout to a new stream:
   outputStream = popen(firstCmd, "r");
 
   // Convert that stream into a character array.
-  // Use fgets to fill a character buffer from the output stream:
+  // https://cplusplus.com/reference/cstdio/fgets/
   while (fgets(streamBuffer, BUFSIZ, outputStream))
   {
-    // Append the buffer to the output string:
-    outputString += streamBuffer;
+    // TESTCODE:
+    puts(streamBuffer);
   }
 
-  // TESTCODE, PLZ IGNORE:
-  std::cout << outputString << std::endl;
+  // Close the stream:
+  // fclose(outputStream);
 }
 
 int main()
