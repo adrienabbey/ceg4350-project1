@@ -552,7 +552,7 @@ void doPipe(char *buf)
   if (p > 0)
   {
     // Close the read pipe:
-    // close(cmdPipe[0]);
+    close(cmdPipe[0]);
 
     // Run the command, saving its output to a stream:
     FILE *firstOutput = popen(firstCmd, "r");
