@@ -545,21 +545,30 @@ void doPipe(char *buf)
 
   // Create the necessary variables:
   FILE *outputStream;
-  char streamBuffer[BUFSIZ];
-  std::string outputString[BUFSIZ];
+  // char streamBuffer[BUFSIZ];
+  // std::string outputString[BUFSIZ];
 
-  // Run the first command, grabbing its stdout to a new stream:
+  // Run the first command on the host, grabbing its stdout to a new stream:
   outputStream = popen(firstCmd, "r");
 
   // Convert that stream into a character array.
   // https://cplusplus.com/reference/cstdio/fgets/
-  while (fgets(streamBuffer, BUFSIZ, outputStream))
-  {
-    // TESTCODE:
-    // puts(streamBuffer);
+  // while (fgets(streamBuffer, BUFSIZ, outputStream))
+  // {
+  //   // TESTCODE:
+  //   // puts(streamBuffer);
 
-    // Append the output to the command string:
-    outputString->append(streamBuffer);
+  //   // Append the output to the command string:
+  //   outputString->append(streamBuffer);
+  // }
+
+  // https://stackoverflow.com/a/10668015
+  char line[BUFSIZ];
+  std::string outputString;
+
+  while (fgets(line, BUFSIZ, outputStream))
+  {
+    outputString += line;
   }
 
   // TESTCODE:
