@@ -513,17 +513,24 @@ int main()
         // multiple commands:
 
         // Prep the vars:
-        char firstCmd[512];  // 512 is safe, right?
-        char secondCmd[512]; // Right?
+        char firstCmd[BUFSIZ];  // Buffersize matters, apparently:
+        char secondCmd[BUFSIZ]; // https://stackoverflow.com/a/14428470
 
         // Split the input:
         splitPipeString(buf, firstCmd, secondCmd);
 
         // Execute the first command, saving the output:
-        FILE *output = popen(firstCmd + 1, "r");
+        // https://stackoverflow.com/a/14428470
+        char output[BUFSIZ];
+        freopen("/dev/null", "a", popen(firstCmd + 1, "r"));
+        setbuf(stdout, output);
 
-        // Do something to run the second command, using the output of the first as arguments?
-        // Better yet, what about a `<` redirect?
+        // Merge the stuffs:
+        std::string secondCmdComb = secondCmd;
+        secondCmdComb.append(output);
+
+        // Test time:
+        printf("Second command is: %s", secondCmdComb.c_str());
       }
 
       else
