@@ -547,6 +547,7 @@ void doPipe(char *buf)
 
   // Create the pipe:
   pipe(cmdPipe);
+  // Data written on cmdPipe[1] can be read from cmdPipe[0]
 
   // Fork this process:
   p = fork();
@@ -558,11 +559,11 @@ void doPipe(char *buf)
     close(cmdPipe[0]);
 
     // Run the command, saving its output to a stream:
-    FILE *firstOutput = popen(firstCmd, "r");
+    FILE *firstCmdOutput = popen(firstCmd, "r");
 
     // Write the output of the first command to the child process:
     // I don't know if size matters?
-    write(cmdPipe[1], firstOutput, BUFSIZ);
+    write(cmdPipe[1], firstCmdOutput, BUFSIZ);
 
     // Close the write pipe:
     close(cmdPipe[1]);
@@ -576,6 +577,9 @@ void doPipe(char *buf)
     // Read the output of the parent process to a string:
     char outputStr[BUFSIZ];
     read(cmdPipe[0], outputStr, BUFSIZ);
+
+    // Execute the second command using the piped arguments:
+    execlp(secondCmd, outputStr);
 
     // Close both ends of the pipe:
     close(cmdPipe[0]);
