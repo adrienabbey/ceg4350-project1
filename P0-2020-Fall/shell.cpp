@@ -542,6 +542,10 @@ void doPipe(char *buf)
   // I'm using the above as a reference guide to figure out how to use forks
   // and pipes.
 
+  // That wasn't enough.  I ended up asking for guidance via email.  I was
+  // going about this all wrong.  I was so fixated on strings and arguments
+  // that I completely missed connecting `stdout` to `stdin`.
+
   int stdoutPipe[2]; // I only need to send data to the child process.
 
   pid_t p; // Tracks the process identifiers used by fork().
@@ -558,11 +562,6 @@ void doPipe(char *buf)
   {
     // Close the writing end of the pipe:
     close(stdoutPipe[1]);
-
-    // I might be doing this wrong.  I might want to swap the parent and
-    // child's roles: The child executes the first command then closes, and
-    // the parent waits for the child process to die before executing the
-    // second command.
 
     // Redirect the piped data to `stdin`.
 
@@ -587,15 +586,6 @@ void doPipe(char *buf)
   {
     // Close the read pipe:
     close(stdoutPipe[0]);
-
-    // Run the command, saving its output to a stream:
-    // FILE *firstCmdOutput = popen(firstCmd, "r");
-    // This is the wrong way to do this.
-
-    // Write the output of the first command to the child process:
-    // I don't know if size matters?
-    // write(stdoutPipe[1], firstCmdOutput, BUFSIZ);
-    // Also wrong.
 
     // I need to redirect `stdout` to the write end of the pipe, then run the command.
 
@@ -638,9 +628,10 @@ int main()
     if (buf[0] == '!') // begins with !, execute it as
     {
       // Check to see if the input contains piped commands:
-      // Note: The project instructions state:
-      // "Implement piping as discussed in class for commands executed on the host."
-      // I'm interpreting that as meaning that piping will *always* only ever involve host commands starting with '!'
+      // Note: The project instructions state: "Implement piping as discussed
+      // in class for commands executed on the host."  I'm interpreting that
+      // as meaning that piping will *always* only ever involve host commands
+      // starting with '!'
       if (checkPipe(buf))
       {
         // Do that:
