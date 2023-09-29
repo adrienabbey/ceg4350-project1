@@ -1,7 +1,7 @@
 #  Makefile for P4: Mounting, Small to Large files;  CEG 433/633 P. Mateti
 
-CURRENT_DIR = P0
-PROJECT = P0
+CURRENT_DIR = P1
+PROJECT = P1
 
 CFLAGS = -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses
 CC = g++
