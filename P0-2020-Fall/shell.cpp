@@ -394,9 +394,6 @@ bool checkRedirect(char *str)
   // Since we're using character arrays, I need a way to find the size of a
   // given char array: https://stackoverflow.com/a/4180826
 
-  // Test code:
-  // printf("Char array size: %lu\n", strlen(str));
-
   for (long unsigned int i = 0; i < strlen(str); i++)
   {
     if (str[i] == '>')
@@ -430,11 +427,9 @@ std::string getRedirectFile(char *str)
 
   // Tokenize the given string:
   std::string returnString = strtok(str, ">");
-  // std::cout << "Command string is: " << returnString << "\n";
 
   // Do this twice to get the file name:
   returnString = strtok(NULL, ">");
-  // std::cout << "File name is: " << returnString << "\n";
 
   // If the first character of the string is a space, remove that:
   // https://stackoverflow.com/a/23834717
@@ -480,23 +475,14 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
   // This is NOT for bonus points.
   // Assumes only two commands with valid formatting.
 
-  // TESTCODE:
-  // printf("  Command given to split: %s\n", buf);
-
   // https://stackoverflow.com/a/49698596
   // I made the mistake of forgetting how pointers and shallow copies work.
 
   // Pull the first command from the string:
   std::string firstCmdTemp = strtok(buf, "|");
 
-  // TESTCODE:
-  // printf("  firstCmd: %s\n", firstCmdTemp.c_str());
-
   // Pull the second:
   std::string secondCmdTemp = strtok(NULL, "|");
-
-  // TESTCODE:
-  // printf("  secondCmd: %s\n", secondCmdTemp.c_str());
 
   // Strip `!' and ' ' from the beginning of each string:
   while (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
