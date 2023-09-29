@@ -484,6 +484,11 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
   // Pull the second:
   std::string secondCmdTemp = strtok(NULL, "|");
 
+  // Note: The project instructions state: "Implement piping as discussed
+  // in class for commands executed on the host."  I'm interpreting that
+  // as meaning that piping will *always* only ever involve host commands
+  // starting with '!'
+
   // Strip `!' and ' ' from the beginning of each string:
   while (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
   {
@@ -635,6 +640,10 @@ int main()
       {
         // Do that:
         doRedirect(buf);
+      }
+      if (checkPipe(buf))
+      {
+        doPipe(buf);
       }
       else
       {
