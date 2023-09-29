@@ -9,6 +9,7 @@
 #include "fs33types.hpp"
 #include <iostream>
 #include <string>
+#include <wait.h>
 
 extern MountEntry *mtab;
 extern VNIN cwdVNIN;
@@ -541,13 +542,13 @@ void doPipe(char *buf)
   // I'm using the above as a reference guide to figure out how to use forks
   // and pipes.
 
-  int cmdPipe[2]; // I only need to send data to the child process.
+  int stdoutPipe[2]; // I only need to send data to the child process.
 
   pid_t p; // Tracks the process identifiers used by fork().
 
   // Create the pipe:
-  pipe(cmdPipe);
-  // Data written on cmdPipe[1] can be read from cmdPipe[0]
+  pipe(stdoutPipe);
+  // Data written on stdoutPipe[1] can be read from stdoutPipe[0]
 
   // Fork this process:
   p = fork();
@@ -555,35 +556,64 @@ void doPipe(char *buf)
   // If this is the parent process:
   if (p > 0)
   {
-    // Close the read pipe:
-    close(cmdPipe[0]);
+    // Close the writing end of the pipe:
+    close(stdoutPipe[1]);
 
-    // Run the command, saving its output to a stream:
-    FILE *firstCmdOutput = popen(firstCmd, "r");
+    // I might be doing this wrong.  I might want to swap the parent and
+    // child's roles: The child executes the first command then closes, and
+    // the parent waits for the child process to die before executing the
+    // second command.
 
-    // Write the output of the first command to the child process:
-    // I don't know if size matters?
-    write(cmdPipe[1], firstCmdOutput, BUFSIZ);
+    // Redirect the piped data to `stdin`.
 
-    // Close the write pipe:
-    close(cmdPipe[1]);
+    // Make a copy of `stdin` so I can restore it later:
+    int stdinCpy = dup(STDIN_FILENO);
+
+    // Redirect piped data to `stdin`:
+    dup2(stdoutPipe[0], STDIN_FILENO);
+
+    // Execute the second command using the piped arguments:
+    system(secondCmd);
+
+    // Restore `stdin`:
+    dup2(stdinCpy, STDIN_FILENO);
+
+    // Close both ends of the pipe:
+    close(stdoutPipe[0]);
+    close(stdoutPipe[1]);
   }
   // Child process:
   else
   {
-    // Close the writing end of the pipe:
-    close(cmdPipe[1]);
+    // Close the read pipe:
+    close(stdoutPipe[0]);
 
-    // Read the output of the parent process to a string:
-    char outputStr[BUFSIZ];
-    read(cmdPipe[0], outputStr, BUFSIZ);
+    // Run the command, saving its output to a stream:
+    // FILE *firstCmdOutput = popen(firstCmd, "r");
+    // This is the wrong way to do this.
 
-    // Execute the second command using the piped arguments:
-    execlp(secondCmd, outputStr);
+    // Write the output of the first command to the child process:
+    // I don't know if size matters?
+    // write(stdoutPipe[1], firstCmdOutput, BUFSIZ);
+    // Also wrong.
 
-    // Close both ends of the pipe:
-    close(cmdPipe[0]);
-    close(cmdPipe[1]);
+    // I need to redirect `stdout` to the write end of the pipe, then run the command.
+
+    // Make a copy of `stdout` so I can restore it later:
+    int stdoutCpy = dup(STDOUT_FILENO);
+
+    // Redirect `stdout` to the pipe:
+    dup2(stdoutPipe[1], STDOUT_FILENO);
+
+    // Run the first command:
+    system(firstCmd);
+
+    // Restore `stdout`:
+    dup2(stdoutCpy, STDOUT_FILENO);
+
+    // Close the pipes:
+    close(stdoutPipe[0]);
+    close(stdoutPipe[1]);
 
     // Close the child process:
     exit(0);
