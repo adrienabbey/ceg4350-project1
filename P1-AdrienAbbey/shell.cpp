@@ -649,9 +649,9 @@ void doSleep(char *buf)
     else
     {
       // FIXME: Assume it's a local, non-piped, non-redirect command:
-      // char commandStr[sanitizedCmd.length()];   // doCommand ain't happy with str.c_str()
-      // strcpy(commandStr, sanitizedCmd.c_str()); // copy the string to char
-      doCommand(sanitizedCmd.c_str());
+      // https://www.geeksforgeeks.org/convert-string-char-array-cpp/
+      char *commandChar = new char[sanitizedCmd.length() + 1]; // doCommand ain't happy with str.c_str()
+      doCommand(commandChar);
     }
   }
 }
