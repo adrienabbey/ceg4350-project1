@@ -419,6 +419,20 @@ bool checkPipe(char *str)
   return false;
 }
 
+bool checkSleep(char *str)
+{
+  // Check for a sleep character in the input string.
+
+  for (long unsigned int i = 0; i < strlen(str); i++)
+  {
+    if (str[i] == '&')
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string getRedirectFile(char *str)
 {
   // My method to extract the file name from the given string.
@@ -598,6 +612,47 @@ void doPipe(char *buf)
 
     // Close the child process:
     exit(0);
+  }
+}
+
+void doSleep(char *buf)
+{
+  // Run the given command in the background.
+  // This could be a local or a host command.
+
+  // Remove the '&' character from the command string:
+  std::string sanitizedCmd = buf;
+  for (long unsigned int i = 0; i < sanitizedCmd.length(); i++)
+  {
+    if (sanitizedCmd[i] == '&')
+    {
+      sanitizedCmd.erase(i, i + 1);
+      i--; // We just deleted a character, go back one index.
+    }
+  }
+
+  // Create a pid object ot track the process identifiers:
+  pid_t pid;
+
+  // Fork the process:
+  pid = fork();
+
+  // I only need to have the child process do anything:
+  if (pid == 0)
+  {
+    // Run the given command.  Assume it's properly formatted.
+    // If it's a system command:
+    if (sanitizedCmd[0] == '!')
+    {
+      system(sanitizedCmd.c_str() + 1);
+    }
+    else
+    {
+      // FIXME: Assume it's a local, non-piped, non-redirect command:
+      // char commandStr[sanitizedCmd.length()];   // doCommand ain't happy with str.c_str()
+      // strcpy(commandStr, sanitizedCmd.c_str()); // copy the string to char
+      doCommand(sanitizedCmd.c_str());
+    }
   }
 }
 
