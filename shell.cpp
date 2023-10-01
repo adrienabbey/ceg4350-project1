@@ -565,7 +565,7 @@ void doPipe(char *buf)
 
   int stdoutPipe[2]; // I only need to send data to the child process.
 
-  pid_t p; // Tracks the process identifiers used by fork().
+  pid_t p; // Tracks the process identifiers used by fork
 
   // Create the pipe:
   pipe(stdoutPipe);
@@ -606,6 +606,11 @@ void doPipe(char *buf)
     close(stdoutPipe[0]);
     close(stdoutPipe[1]);
   }
+  if (p < 0) // If an error occurred while forking...
+  {
+    system("echo An error occurred while forking...");
+    exit(EXIT_FAILURE);
+  }
   // Child process:
   else
   {
@@ -640,7 +645,7 @@ void doPipe(char *buf)
     close(stdoutPipe[1]);
 
     // Close the child process:
-    exit(0);
+    exit(EXIT_SUCCESS);
   }
 }
 
@@ -674,7 +679,7 @@ void doSleep(char *buf)
     if (sanitizedCmd[0] == '!')
     {
       system(sanitizedCmd.c_str() + 1);
-      exit(1);
+      exit(EXIT_SUCCESS);
     }
     else
     {
@@ -682,8 +687,13 @@ void doSleep(char *buf)
       // https://www.geeksforgeeks.org/convert-string-char-array-cpp/
       char *commandChar = new char[sanitizedCmd.length() + 1]; // doCommand ain't happy with str.c_str()
       doCommand(commandChar);
-      exit(1);
+      exit(EXIT_SUCCESS);
     }
+  }
+  else // Otherwise something went wrong...
+  {
+    system("echo Something went very wrong when trying to sleep...");
+    exit(EXIT_FAILURE);
   }
 }
 
