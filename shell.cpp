@@ -541,8 +541,7 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
 void doPipe(char *buf)
 {
   // Re-reading the instructions, this is actually a lot easier than I
-  // was expecting: I only need to handle host commands!  I don't need
-  // to concern myself with project shell commands.
+  // was expecting: I only need to handle host commands!
 
   // For piped commands, I first need to split the input string into
   // multiple commands:
@@ -563,13 +562,13 @@ void doPipe(char *buf)
   // going about this all wrong.  I was so fixated on strings and arguments
   // that I completely missed connecting `stdout` to `stdin`.
 
-  int stdoutPipe[2]; // I only need to send data to the child process.
+  int stdPipe[2]; // I only need to send data to the child process.
 
   pid_t p; // Tracks the process identifiers used by fork
 
   // Create the pipe:
-  pipe(stdoutPipe);
-  // Data written on stdoutPipe[1] can be read from stdoutPipe[0]
+  pipe(stdPipe);
+  // Data written on stdPipe[1] can be read from stdoutPipe[0]
 
   // Fork this process:
   p = fork();
@@ -578,7 +577,7 @@ void doPipe(char *buf)
   if (p > 0)
   {
     // Close the writing end of the pipe:
-    close(stdoutPipe[1]);
+    close(stdPipe[1]);
 
     // Redirect the piped data to `stdin`.
 
@@ -586,7 +585,7 @@ void doPipe(char *buf)
     int stdinCpy = dup(STDIN_FILENO);
 
     // Redirect piped data to `stdin`:
-    dup2(stdoutPipe[0], STDIN_FILENO);
+    dup2(stdPipe[0], STDIN_FILENO);
 
     // Execute the second command using the piped arguments:
     if (secondCmd[0] == '!') // I need to remove the '!' char before running the command:
@@ -603,8 +602,8 @@ void doPipe(char *buf)
     dup2(stdinCpy, STDIN_FILENO);
 
     // Close both ends of the pipe:
-    close(stdoutPipe[0]);
-    close(stdoutPipe[1]);
+    close(stdPipe[0]);
+    close(stdPipe[1]);
   }
   if (p < 0) // If an error occurred while forking...
   {
@@ -615,7 +614,7 @@ void doPipe(char *buf)
   else
   {
     // Close the read pipe:
-    close(stdoutPipe[0]);
+    close(stdPipe[0]);
 
     // I need to redirect `stdout` to the write end of the pipe, then run the command.
 
@@ -623,7 +622,7 @@ void doPipe(char *buf)
     int stdoutCpy = dup(STDOUT_FILENO);
 
     // Redirect `stdout` to the pipe:
-    dup2(stdoutPipe[1], STDOUT_FILENO);
+    dup2(stdPipe[1], STDOUT_FILENO);
 
     // Run the first command:
     // Note: the first command might NOT be a host command:
@@ -641,8 +640,8 @@ void doPipe(char *buf)
     dup2(stdoutCpy, STDOUT_FILENO);
 
     // Close the pipes:
-    close(stdoutPipe[0]);
-    close(stdoutPipe[1]);
+    close(stdPipe[0]);
+    close(stdPipe[1]);
 
     // Close the child process:
     exit(EXIT_SUCCESS);
