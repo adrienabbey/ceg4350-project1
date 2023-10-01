@@ -375,7 +375,7 @@ void ourgets(char *buf)
     *p = 0;
 }
 
-// Copy/paste of provided code from main method to reduce repetition:
+// Copy/paste of provided code that executes a local command, from main() method to reduce repetition:
 void doCommand(char *buf)
 {
   setArgsGiven(buf, arg, types, nArgsMax);
@@ -503,19 +503,19 @@ void splitPipeString(char *buf, char *firstCmd, char *secondCmd)
   // as meaning that piping will *always* only ever involve host commands
   // starting with '!'
 
-  // Strip `!' and ' ' from the beginning of each string:
-  while (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
+  // Strip ' ' from the beginning of each string:
+  while (firstCmdTemp[0] == ' ')
   {
-    if (firstCmdTemp[0] == ' ' || firstCmdTemp[0] == '!')
+    if (firstCmdTemp[0] == ' ')
     {
       firstCmdTemp.erase(0, 1);
     }
   }
 
-  // Strip `!' and ' ' from the beginning of each string:
-  while (secondCmdTemp[0] == ' ' || secondCmdTemp[0] == '!')
+  // Strip ' ' from the beginning of each string:
+  while (secondCmdTemp[0] == ' ')
   {
-    if (secondCmdTemp[0] == ' ' || secondCmdTemp[0] == '!')
+    if (secondCmdTemp[0] == ' ')
     {
       secondCmdTemp.erase(0, 1);
     }
@@ -656,6 +656,52 @@ void doSleep(char *buf)
   }
 }
 
+// My method to parse commands, applying redirects, pipes, and sleeps as appropriate:
+void checkCommands(char *buf)
+{
+  // Start by checking for blank commands and comments.
+  //   Note: much of this is a copy of code provided in main(), moved to here:
+  if (buf[0] == 0)
+  {
+    return; // no command, so do nothing
+  }
+  else if (buf[0] == '#')
+  {
+    return; // this is a comment line, do nothing
+  }
+  else // If not blank or commented code, do stuff:
+  {
+    // If the command has a pipe:
+    if (checkPipe(buf))
+    {
+      doPipe(buf); // TODO: doPipe *needs* to handle local commands, redirects, sleeps, etc!
+    }
+    else if (checkRedirect(buf)) // If the command has a redirect but no pipe:
+    {
+      doRedirect(buf); // TODO: Likewise as above.
+    }
+    else // If not a pipe or redirect:
+    {
+      if (buf[0] == '!') // If a host command:
+      {
+        if (checkSleep(buf)) // Check for any sleeps:
+        {
+          doSleep(buf); // TODO: Consider having this method check for local/host execution!
+        }
+        else // not a sleep, pipe, or redirect, but it IS a host command:
+        {
+          system(buf + 1); // Execute the shell command on host, excluding the '!' character
+        }
+      }
+      else // Not a pipe, redirect, or host command:
+      {
+        // Execute a local command.
+        doCommand(buf); // Todo: Should this check for sleeps, etc?
+      }
+    }
+  }
+}
+
 int main()
 {
   char buf[1024]; // better not type longer than 1023 chars
@@ -667,46 +713,8 @@ int main()
     printf("%s", "sh33% "); // prompt
     ourgets(buf);
     printf("cmd [%s]\n", buf); // just print out what we got as-is
-    if (buf[0] == 0)
-      continue;
-    if (buf[0] == '#')
-      continue;        // this is a comment line, do nothing
-    if (buf[0] == '!') // begins with !, execute it as
-    {
-      // Check to see if the input contains piped commands:
-      // Note: The project instructions state: "Implement piping as discussed
-      // in class for commands executed on the host."  I'm interpreting that
-      // as meaning that piping will *always* only ever involve host commands
-      // starting with '!'
-      if (checkPipe(buf))
-      {
-        // Do that:
-        doPipe(buf);
-      }
-      else
-      {
-        system(buf + 1); // a normal shell cmd}
-      }
-    }
-    else
-    {
-      // Check to see if it's a redirect:
-      if (checkRedirect(buf))
-      {
-        // Do that:
-        doRedirect(buf);
-      }
-      if (checkPipe(buf))
-      {
-        doPipe(buf);
-      }
-      else
-      {
-        // Note: I moved the code that was here into another function so I can
-        // reuse it elsewhere, reducing code repetition:
-        doCommand(buf);
-      }
-    }
+    // I moved conditional checking of the given command to another method, allowing me to reuse the code elsewhere.
+    checkCommands(buf); // Parse the command for comments, host, redirects, pipes, sleeps, etc, then apply those as appropriate.
   }
 }
 
