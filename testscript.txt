@@ -1,0 +1,13 @@
+# My Test script for Project 1
+!rm testHost.txt testLocal.txt
+mkfs D1
+ls > testLocal.txt
+!ls > testHost.txt
+ls | cat
+!ls | grep P1
+!cat testLocal.txt
+# Shameless copy of your example from Discord:
+!(sleep 5; echo The child is done sleeping...) &
+# Waiting for background execution to finish...
+!sleep 6
+quit
