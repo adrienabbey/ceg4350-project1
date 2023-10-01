@@ -375,6 +375,8 @@ void ourgets(char *buf)
     *p = 0;
 }
 
+/* The following are all custom functions I wrote for Project 1. */
+
 // Copy/paste of provided code that executes a local command, from main() method to reduce repetition:
 void doCommand(char *buf)
 {
@@ -676,7 +678,7 @@ void doSleep(char *buf)
 }
 
 // My method to parse commands, applying redirects, pipes, and sleeps as appropriate:
-void checkCommands(char *buf)
+void parseCommands(char *buf)
 {
   // Start by checking for blank commands and comments.
   //   Note: much of this is a copy of code provided in main(), moved to here:
@@ -721,6 +723,8 @@ void checkCommands(char *buf)
   }
 }
 
+/* End of my custom functions. */
+
 int main()
 {
   char buf[1024]; // better not type longer than 1023 chars
@@ -733,7 +737,7 @@ int main()
     ourgets(buf);
     printf("cmd [%s]\n", buf); // just print out what we got as-is
     // I moved conditional checking of the given command to another method, allowing me to reuse the code elsewhere.
-    checkCommands(buf); // Parse the command for comments, host, redirects, pipes, sleeps, etc, then apply those as appropriate.
+    parseCommands(buf); // Parse the command for comments, host, redirects, pipes, sleeps, etc, then apply those as appropriate.
   }
 }
 
