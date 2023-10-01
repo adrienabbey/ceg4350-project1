@@ -467,6 +467,9 @@ void doRedirect(char *buf)
   // First I need to get the filename from the string:
   std::string fileName = getRedirectFile(buf);
 
+  // Remove the redirect from the command:
+  char *redirectedCommand = strtok(buf, ">");
+
   // Open the file: https://www.geeksforgeeks.org/convert-string-char-array-cpp/
   // https://stackoverflow.com/a/35186153
   int fileDescriptor = open(fileName.c_str(), O_WRONLY | O_CREAT, 0644);
@@ -477,8 +480,15 @@ void doRedirect(char *buf)
   // Redirect `stdout` to the given file: https://stackoverflow.com/q/26666012
   dup2(fileDescriptor, STDOUT_FILENO);
 
-  // Copy of original command handler from below:
-  doCommand(buf);
+  // Check for host commands:
+  if (redirectedCommand[0] == '!')
+  {
+    system(redirectedCommand + 1);
+  }
+  else
+  {
+    doCommand(redirectedCommand); // Copy of original command handler from main()
+  }
 
   // Restore `stdout`:
   dup2(savedStdout, STDOUT_FILENO);
