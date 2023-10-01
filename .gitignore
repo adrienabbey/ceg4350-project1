@@ -1,5 +1,6 @@
 *.o
 *.dsk
 P[0-4]
+test
 testHost.txt
 testLocal.txt
