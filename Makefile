@@ -34,7 +34,7 @@ tar archive: clean
 	(cd ..; tar cvvfj $(PROJECT)-`date +%G%m%d%H%M`.tbz $(CURRENT_DIR))
 
 clean:
-	rm -fr core* *.o *~ *.out $(PROJECT) D?.??? lslisa*  *.f33 \\#*
+	rm -fr core* *.o *~ *.out $(PROJECT) D?.??? lslisa*  *.f33 test testHost.txt testLocal.txt \\#*
 
 
 # -eof-
