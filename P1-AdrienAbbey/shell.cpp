@@ -577,7 +577,15 @@ void doPipe(char *buf)
     dup2(stdoutPipe[0], STDIN_FILENO);
 
     // Execute the second command using the piped arguments:
-    system(secondCmd);
+    if (secondCmd[0] == '!') // I need to remove the '!' char before running the command:
+    {
+      system(secondCmd + 1);
+    }
+    else
+    {
+      system(secondCmd);
+    }
+    // TODO: What if this were another checkCommand call?
 
     // Restore `stdin`:
     dup2(stdinCpy, STDIN_FILENO);
@@ -601,7 +609,16 @@ void doPipe(char *buf)
     dup2(stdoutPipe[1], STDOUT_FILENO);
 
     // Run the first command:
-    system(firstCmd);
+    // Note: the first command might NOT be a host command:
+    if (firstCmd[0] == '!') // If the first command IS a host command:
+    {
+      system(firstCmd + 1); // Run the first command on the host, excluding the '!' char
+    }
+    else // Otherwise, the first command is a local command:
+    {
+      // TODO: Consider checking for redirects, sleeps, additional pipes, etc.
+      doCommand(firstCmd); // Note: this assumes the first command is a regular command.
+    }
 
     // Restore `stdout`:
     dup2(stdoutCpy, STDOUT_FILENO);
@@ -645,6 +662,7 @@ void doSleep(char *buf)
     if (sanitizedCmd[0] == '!')
     {
       system(sanitizedCmd.c_str() + 1);
+      exit(1);
     }
     else
     {
@@ -652,6 +670,7 @@ void doSleep(char *buf)
       // https://www.geeksforgeeks.org/convert-string-char-array-cpp/
       char *commandChar = new char[sanitizedCmd.length() + 1]; // doCommand ain't happy with str.c_str()
       doCommand(commandChar);
+      exit(1);
     }
   }
 }
@@ -674,7 +693,7 @@ void checkCommands(char *buf)
     // If the command has a pipe:
     if (checkPipe(buf))
     {
-      doPipe(buf); // TODO: doPipe *needs* to handle local commands, redirects, sleeps, etc!
+      doPipe(buf); // TODO: does doPipe need to handle redirects, sleeps, and additional commands?
     }
     else if (checkRedirect(buf)) // If the command has a redirect but no pipe:
     {
