@@ -571,15 +571,15 @@ void doPipe(char *buf)
   // Data written on stdPipe[1] can be read from stdoutPipe[0]
 
   // Fork this process:
-  p = fork();
+  p = fork(); // p=-1 for errors, p=0 for the new child, and p>0 for this parent process.
 
   // If this is the parent process:
   if (p > 0)
   {
     // The parent process handles the second command.
-    // This means it wants to read data from the child process, 
+    // This means it wants to read data from the child process,
     // which does the first command.
-    
+
     // Close the writing end of the pipe:
     close(stdPipe[1]);
 
@@ -609,9 +609,9 @@ void doPipe(char *buf)
     close(stdPipe[0]);
     close(stdPipe[1]);
   }
-  if (p < 0) // If an error occurred while forking...
+  else if (p < 0) // If an error occurred while forking...
   {
-    system("echo An error occurred while forking...");
+    fprintf(stderr, "An error occurred while forking.");
     exit(EXIT_FAILURE);
   }
   // Child process:
@@ -695,7 +695,7 @@ void doSleep(char *buf)
   }
   else // Otherwise something went wrong...
   {
-    system("echo Something went very wrong when trying to sleep...");
+    fprintf(stderr, "An error occurred while executing a background process.");
     exit(EXIT_FAILURE);
   }
 }
