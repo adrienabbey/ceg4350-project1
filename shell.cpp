@@ -693,6 +693,10 @@ void doSleep(char *buf)
       exit(EXIT_SUCCESS);
     }
   }
+  else if (pid > 0)
+  {
+    // Parent process, do nothing.
+  }
   else // Otherwise something went wrong...
   {
     fprintf(stderr, "An error occurred while executing a background process.");
