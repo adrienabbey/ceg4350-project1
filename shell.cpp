@@ -421,9 +421,9 @@ bool checkPipe(char *str)
   return false;
 }
 
-bool checkSleep(char *str)
+bool checkBackground(char *str)
 {
-  // Check for a sleep character in the input string.
+  // Check for a background character in the input string.
 
   for (long unsigned int i = 0; i < strlen(str); i++)
   {
@@ -636,7 +636,7 @@ void doPipe(char *buf)
     }
     else // Otherwise, the first command is a local command:
     {
-      // TODO: Consider checking for redirects, sleeps, additional pipes, etc.
+      // TODO: Consider checking for redirects, backgrounds, additional pipes, etc.
       doCommand(firstCmd); // Note: this assumes the first command is a regular command.
     }
 
@@ -652,7 +652,7 @@ void doPipe(char *buf)
   }
 }
 
-void doSleep(char *buf)
+void doBackground(char *buf)
 {
   // Run the given command in the background.
   // This could be a local or a host command.
@@ -704,7 +704,7 @@ void doSleep(char *buf)
   }
 }
 
-// My method to parse commands, applying redirects, pipes, and sleeps as appropriate:
+// My method to parse commands, applying redirects, pipes, and background as appropriate:
 void parseCommands(char *buf)
 {
   // Start by checking for blank commands and comments.
@@ -722,7 +722,7 @@ void parseCommands(char *buf)
     // If the command has a pipe:
     if (checkPipe(buf))
     {
-      doPipe(buf); // TODO: does doPipe need to handle redirects, sleeps, and additional commands?
+      doPipe(buf); // TODO: does doPipe need to handle redirects, background, and additional commands?
     }
     else if (checkRedirect(buf)) // If the command has a redirect but no pipe:
     {
@@ -732,11 +732,11 @@ void parseCommands(char *buf)
     {
       if (buf[0] == '!') // If a host command:
       {
-        if (checkSleep(buf)) // Check for any sleeps:
+        if (checkBackground(buf)) // Check for any background:
         {
-          doSleep(buf); // TODO: Consider having this method check for local/host execution!
+          doBackground(buf); // TODO: Consider having this method check for local/host execution!
         }
-        else // not a sleep, pipe, or redirect, but it IS a host command:
+        else // not a background, pipe, or redirect, but it IS a host command:
         {
           system(buf + 1); // Execute the shell command on host, excluding the '!' character
         }
@@ -744,7 +744,7 @@ void parseCommands(char *buf)
       else // Not a pipe, redirect, or host command:
       {
         // Execute a local command.
-        doCommand(buf); // Todo: Should this check for sleeps, etc?
+        doCommand(buf); // Todo: Should this check for background, etc?
       }
     }
   }
@@ -764,7 +764,7 @@ int main()
     ourgets(buf);
     printf("cmd [%s]\n", buf); // just print out what we got as-is
     // I moved conditional checking of the given command to another method, allowing me to reuse the code elsewhere.
-    parseCommands(buf); // Parse the command for comments, host, redirects, pipes, sleeps, etc, then apply those as appropriate.
+    parseCommands(buf); // Parse the command for comments, host, redirects, pipes, background, etc, then apply those as appropriate.
   }
 }
 
