@@ -580,43 +580,6 @@ void doPipe(char *buf)
     // This means it wants to read data from the child process,
     // which does the first command.
 
-    // Close the writing end of the pipe:
-    close(stdPipe[1]);
-
-    // Redirect the piped data to `stdin`.
-
-    // Make a copy of `stdin` so I can restore it later:
-    int stdinCpy = dup(STDIN_FILENO);
-
-    // Redirect piped data to `stdin`:
-    dup2(stdPipe[0], STDIN_FILENO);
-
-    // Execute the second command using the piped arguments:
-    if (secondCmd[0] == '!') // I need to remove the '!' char before running the command:
-    {
-      system(secondCmd + 1);
-    }
-    else
-    {
-      system(secondCmd);
-    }
-    // TODO: What if this were another checkCommand call?
-
-    // Restore `stdin`:
-    dup2(stdinCpy, STDIN_FILENO);
-
-    // Close both ends of the pipe:
-    close(stdPipe[0]);
-    close(stdPipe[1]);
-  }
-  else if (p < 0) // If an error occurred while forking...
-  {
-    fprintf(stderr, "An error occurred while forking.");
-    exit(EXIT_FAILURE);
-  }
-  // Child process:
-  else
-  {
     // Close the read pipe:
     close(stdPipe[0]);
 
@@ -644,6 +607,44 @@ void doPipe(char *buf)
     dup2(stdoutCpy, STDOUT_FILENO);
 
     // Close the pipes:
+    close(stdPipe[0]);
+    close(stdPipe[1]);
+  }
+  else if (p < 0) // If an error occurred while forking...
+  {
+    fprintf(stderr, "An error occurred while forking.");
+    exit(EXIT_FAILURE);
+  }
+  // Child process:
+  else
+  {
+
+    // Close the writing end of the pipe:
+    close(stdPipe[1]);
+
+    // Redirect the piped data to `stdin`.
+
+    // Make a copy of `stdin` so I can restore it later:
+    int stdinCpy = dup(STDIN_FILENO);
+
+    // Redirect piped data to `stdin`:
+    dup2(stdPipe[0], STDIN_FILENO);
+
+    // Execute the second command using the piped arguments:
+    if (secondCmd[0] == '!') // I need to remove the '!' char before running the command:
+    {
+      system(secondCmd + 1);
+    }
+    else
+    {
+      system(secondCmd);
+    }
+    // TODO: What if this were another checkCommand call?
+
+    // Restore `stdin`:
+    dup2(stdinCpy, STDIN_FILENO);
+
+    // Close both ends of the pipe:
     close(stdPipe[0]);
     close(stdPipe[1]);
 
