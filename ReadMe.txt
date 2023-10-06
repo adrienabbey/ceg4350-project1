@@ -3,7 +3,29 @@ Adrien Abbey (abbey.12@wright.edu)
 CEG-4350-01
 Oct. 2023
 
-<`ls -l` goes here>
+Files:
+    total 144
+    -rw-r--r-- 1 adrienabbey adrienabbey   754 Oct  1 18:25 Makefile
+    -rw-r--r-- 1 adrienabbey adrienabbey  1615 Oct  1 17:58 ReadMe.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  1456 Sep 23 12:28 answers.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  2958 Sep 23 12:28 bitvector.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey 30752 Sep 23 12:28 cmdsTried.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  5436 Sep 23 12:28 directory.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey   174 Sep 23 12:28 diskParams.dat
+    -rw-r--r-- 1 adrienabbey adrienabbey  4237 Sep 23 12:28 file.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey     0 Oct  6 13:41 files.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  6975 Sep 23 12:28 fs33types.hpp
+    -rw-r--r-- 1 adrienabbey adrienabbey  7228 Oct  6 13:40 gdbSession.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  7595 Sep 23 12:28 inodes.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey  3644 Sep 23 12:28 mount.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey 19516 Oct  6 13:25 shell.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey  3832 Sep 23 12:28 simdisk.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey    97 Sep 23 12:28 stdTestScriptP1.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey   280 Oct  1 20:04 testscript.txt
+    -rw-r--r-- 1 adrienabbey adrienabbey  2718 Sep 23 12:28 typescript
+    -rw-r--r-- 1 adrienabbey adrienabbey   111 Sep 23 12:28 user.cpp
+    -rw-r--r-- 1 adrienabbey adrienabbey  6905 Sep 23 12:28 volume.cpp
+
 
 [ Explanation of Project Implementation ]
 In order to implement Project 1, I built ontop of the provided `P0` files.  To 
