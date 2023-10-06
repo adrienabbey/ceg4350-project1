@@ -576,9 +576,9 @@ void doPipe(char *buf)
   // If this is the parent process:
   if (p > 0)
   {
-    // The parent process handles the second command.
-    // This means it wants to read data from the child process,
-    // which does the first command.
+    // The parent process handles the first command.
+    // This means it wants to write data to the child process,
+    // which does the second command.
 
     // Close the read pipe:
     close(stdPipe[0]);
