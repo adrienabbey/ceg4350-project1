@@ -1,0 +1,143 @@
+Script started on 2023-10-06 13:38:07-04:00 [TERM="xterm-256color" TTY="/dev/pts/7" COLUMNS="125" LINES="76"]
+[?2004h]0;sevriem@DESKTOP-6MJBQ2G: ~/git/ceg4350-project0[01;32msevriem@DESKTOP-6MJBQ2G[00m:[01;34m~/git/ceg4350-project0[00m$ make clean
+[?2004lrm -fr core* *.o *~ *.out P0 D?.??? lslisa*  *.f33 \\#*
+[?2004h]0;sevriem@DESKTOP-6MJBQ2G: ~/git/ceg4350-project0[01;32msevriem@DESKTOP-6MJBQ2G[00m:[01;34m~/git/ceg4350-project0[00m$ make
+[?2004lg++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c simdisk.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c bitvector.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c directory.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c file.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c inodes.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c volume.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c mount.cpp
+g++ -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses -c shell.cpp
+g++ -o P0 -g -Wall -ansi -pedantic -Wno-write-strings -Wno-parentheses simdisk.o bitvector.o directory.o file.o inodes.o volume.o mount.o shell.o
+[?2004h]0;sevriem@DESKTOP-6MJBQ2G: ~/git/ceg4350-project0[01;32msevriem@DESKTOP-6MJBQ2G[00m:[01;34m~/git/ceg4350-project0[00m$ gdb P0
+[?2004l[35;1mGNU gdb (Ubuntu 12.1-0ubuntu1~22.04) 12.1[m
+Copyright (C) 2022 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This GDB was configured as "x86_64-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+    <http://www.gnu.org/software/gdb/documentation/>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+Reading symbols from [32mP0[m...
+[?2004h(gdb) b main
+[?2004lBreakpoint 1 at [34m0x68d6[m: file [32mshell.cpp[m, line 356.
+[?2004h(gdb) r
+[?2004lStarting program: [32m/home/sevriem/git/ceg4350-project0/P0[m 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "[32m/lib/x86_64-linux-gnu/libthread_db.so.1[m".
+
+Breakpoint 1, [33mmain[m () at [32mshell.cpp[m:356
+356	[31m{[m
+[?2004h[?2004l[?2004h(gdb) n
+[?2004l359	  [01musage[m[31m();[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lThe shell has only the following cmds:
+	cd	s
+	cp	ss
+	echo	ssss
+	inode	u
+	ls	
+	lslong	
+	mkdir	s
+	mkdisk	s
+	mkfs	s
+	mount	us
+	mount	
+	mv	ss
+	rddisk	su
+	rmdir	s
+	rm	s
+	pwd	
+	q	
+	quit	
+	umount	u
+	wrdisk	sus
+Start with ! to invoke a Unix shell cmd
+361	    [31m*[mbuf [31m=[m [35m0[m[31m;[m			[36m// clear old input[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l362	    [01mprintf[m[31m([m[31m"%s"[m[31m,[m [31m"sh33% "[m[31m);[m	[36m// prompt[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l363	    [01mourgets[m[31m([mbuf[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lsh33% mkfs D1
+364	    [01mprintf[m[31m([m[31m"cmd [%s][m[35m\n[m[31m"[m[31m,[m buf[31m);[m	[36m// just print out what we got as-is[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lcmd [mkfs D1]
+365	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [35m0[m[31m)[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l367	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [31m'#'[m[31m)[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l369	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [31m'!'[m[31m)[m		[36m// begins with !, execute it as[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l372	      [01msetArgsGiven[m[31m([mbuf[31m,[m arg[31m,[m types[31m,[m nArgsMax[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l373	      [32mint[m k [31m=[m [01mfindCmd[m[31m([mbuf[31m,[m types[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l374	      [01;34mif[m [31m([mk [31m>=[m [35m0[m[31m)[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l375		[01minvokeCmd[m[31m([mk[31m,[m arg[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lmake33fv() = 0x555555572af0, Name == D1, Disk# == 2
+361	    [31m*[mbuf [31m=[m [35m0[m[31m;[m			[36m// clear old input[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l362	    [01mprintf[m[31m([m[31m"%s"[m[31m,[m [31m"sh33% "[m[31m);[m	[36m// prompt[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l363	    [01mourgets[m[31m([mbuf[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lsh33% !ls
+364	    [01mprintf[m[31m([m[31m"cmd [%s][m[35m\n[m[31m"[m[31m,[m buf[31m);[m	[36m// just print out what we got as-is[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lcmd [!ls]
+365	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [35m0[m[31m)[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l367	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [31m'#'[m[31m)[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l369	    [01;34mif[m [31m([mbuf[31m[[m[35m0[m[31m][m [31m==[m [31m'!'[m[31m)[m		[36m// begins with !, execute it as[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l370	      [01msystem[m[31m([mbuf [31m+[m [35m1[m[31m);[m		[36m// a normal shell cmd[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l[Detaching after vfork from child process 12520]
+D1.dsk	  bitvector.cpp  directory.o	 file.o		 inodes.cpp  mount.o	simdisk.cpp  user.cpp
+Makefile  bitvector.o	 diskParams.dat  fs33types.hpp	 inodes.o    shell.cpp	simdisk.o    volume.cpp
+P0	  directory.cpp  file.cpp	 gdbSession.txt  mount.cpp   shell.o	typescript   volume.o
+361	    [31m*[mbuf [31m=[m [35m0[m[31m;[m			[36m// clear old input[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l362	    [01mprintf[m[31m([m[31m"%s"[m[31m,[m [31m"sh33% "[m[31m);[m	[36m// prompt[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004l363	    [01mourgets[m[31m([mbuf[31m);[m
+[?2004h[?2004l[?2004h(gdb) 
+[?2004lsh33% q
+364	    [01mprintf[m[31m([m[31m"cmd [%s][m[35m\n[m[31m"[m[31m,[m buf[31m);[m	[36m// just print out what we got as-is[m
+[?2004h[?2004l[?2004h(gdb) exit
+[?2004l[?2004hA debugging session is active.
+
+	Inferior 1 [process 12054] will be killed.
+
+Quit anyway? (y or n) n
+[?2004lNot confirmed.
+[?2004h(gdb) 
+[?2004l[?2004hA debugging session is active.
+
+	Inferior 1 [process 12054] will be killed.
+
+Quit anyway? (y or n) n
+[?2004lNot confirmed.
+[?2004h(gdb) e[Kq[Kq
+[?2004l[?2004hA debugging session is active.
+
+	Inferior 1 [process 12054] will be killed.
+
+Quit anyway? (y or n) y
+[?2004l[?2004h]0;sevriem@DESKTOP-6MJBQ2G: ~/git/ceg4350-project0[01;32msevriem@DESKTOP-6MJBQ2G[00m:[01;34m~/git/ceg4350-project0[00m$ exit
+[?2004lexit
+
+Script done on 2023-10-06 13:40:03-04:00 [COMMAND_EXIT_CODE="0"]
